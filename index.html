@@ -109,6 +109,14 @@
         </div>
       </header>
 
+      <!-- Franja de contexto para impresión: oculta en pantalla (headerOperativo
+           ya tiene esta info como campos interactivos), se llena y se muestra
+           SOLO al imprimir Vista de Planta/Análisis/Histórico/Dashboard, ya
+           que esas pantallas ocultan headerOperativo completo (tiene botones
+           y selects que no lucen bien en papel). Ver imprimirVista() en
+           generarAsakai.js. -->
+      <div id="printResumenContexto" class="print-only"></div>
+
       <main>
         <!-- VISTA 1: DASHBOARD Y SINÓPTICO DE LÍNEAS -->
              <!-- ============================================================ -->

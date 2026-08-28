@@ -231,3 +231,14 @@ export function guardarProduccionLinea(lineaId, campo, valorNuevo) {
   s.actualizada = new Date().toISOString();
   persistir();
 }
+
+// ==========================================================
+// EXPOSICIÓN A window
+// ----------------------------------------------------------
+// guardarProduccionLinea: única función de este archivo que se
+// llama directo desde onchange="..." generado dinámicamente en
+// vistaDePlanta.js (inputs de producto/formato por línea). El
+// resto de nucleo/estado.js no necesita esto porque nada más de
+// acá se invoca directo desde el HTML.
+// ==========================================================
+window.guardarProduccionLinea = guardarProduccionLinea;

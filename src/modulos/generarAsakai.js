@@ -6,7 +6,7 @@
   vía window.print(). También controla la impresión simple de la
   vista actual (imprimirVista).
 
-  ✅ BUG CORREGIDO: antes, paginaAsakaiUnaHoja() no recalculaba los
+   BUG CORREGIDO: antes, paginaAsakaiUnaHoja() no recalculaba los
   KPIs industriales (disponibilidad, calidad, EGE, rendimiento) —
   leía el texto ya renderizado en el DOM de #vpKpis, que solo se
   llenaba si el usuario había visitado antes la pestaña "Vista de
@@ -63,15 +63,15 @@ function paginaAsakaiUnaHoja(linea) {
   const kpiVacio = { valor: `${kpis.m.vacio} min` };
   const kpiCritica = {
     valor: kpis.maquinaCritica
-      ? `${kpis.maquinaCritica.mins} min · ${kpis.nivelCritica.label}`
+      ? `${kpis.maquinaCritica.equipo} — ${kpis.maquinaCritica.mins} min · ${kpis.nivelCritica.label}`
       : 'Sin datos'
   };
   const kpiDefecto = {
     valor: kpis.defectoPreponderante
-      ? `${kpis.defectoPreponderante.porcentaje}% · ${kpis.nivelDefecto.label}`
+      ? `${kpis.defectoPreponderante.nombre} — ${kpis.defectoPreponderante.porcentaje}% · ${kpis.nivelDefecto.label}`
       : 'Sin defectos'
   };
-  const kpiDisponibilidad = { valor: `${kpis.disponibilidadEquipos.toFixed(1)}%` };
+  const kpiDisponibilidad = { valor: `${kpis.m.disponibilidad.toFixed(1)}%` };
   const kpiRendimiento = {
     valor: kpis.rendimientoPct === null ? 'N/D' : kpis.rendimientoPct.toFixed(1) + '%'
   };
@@ -623,6 +623,29 @@ function generarAsakai() {
   });
 }
 
+/**
+ * Llena la franja de contexto (fecha/turno/supervisor/línea) que
+ * solo se ve al imprimir la vista normal — headerOperativo (que
+ * tiene esos mismos datos) se oculta completo en la impresión
+ * porque tiene botones y selects que no lucen bien en papel.
+ */
+function renderResumenImpresion() {
+  const contenedor = document.getElementById('printResumenContexto');
+  if (!contenedor) return;
+  const s = sesion();
+  const lineaId = valor('lineaVista') || 'TODAS';
+  const nombreArea = lineaId === 'TODAS' ? 'Todas las líneas' : nombreLinea(lineaId);
+
+  contenedor.innerHTML = `
+    <div style="display:flex; gap:8mm; flex-wrap:wrap;">
+      <div><strong>Fecha</strong>${esc(fmtFecha(valor('fecha')))}</div>
+      <div><strong>Turno</strong>${esc(valor('turno'))}</div>
+      <div><strong>Supervisor</strong>${esc(s.supervisor || 'No asignado')}</div>
+      <div><strong>Área monitoreada</strong>${esc(nombreArea)}</div>
+    </div>
+  `;
+}
+
 function imprimirVista() {
   // Asegurarnos de limpiar cualquier contenedor de reporte oculto
   const printReportContainer = document.getElementById('printReport');
@@ -633,6 +656,10 @@ function imprimirVista() {
   
   // Remover clases de impresión masiva por si hubieran quedado colgadas
   document.body.classList.remove('print-report');
+
+  // Llenar la franja de contexto (fecha/turno/supervisor/línea) que
+  // solo aparece en esta impresión, ya que headerOperativo se oculta.
+  renderResumenImpresion();
 
   // Disparar la impresión nativa de la pantalla activa
   window.print();

@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIRA | Gestión de la Producción</title>
+  <!-- Librerías externas: Tailwind CSS para diseño, Chart.js para gráficos y SheetJS para Excel -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <div class="app-shell">
+    
+    <!-- ========================================== -->
+    <!-- BLOQUE: BARRA LATERAL DE NAVEGACIÓN (SIDEBAR) -->
+    <!-- ========================================== -->
+    <aside class="sidebar no-print">
+      <div class="px-6 py-5 border-b border-slate-700/70">
+        <div class="flex items-center gap-4">
+          <div class="brand-mark">K</div>
+          <div>
+            <div class="text-3xl font-black tracking-wide text-white">KIRA</div>
+            <div class="text-[9px] uppercase tracking-[.16em] text-white-300">Industrial Software Platform</div>
+          </div>
+        </div>
+      </div>
+   <nav class="side-nav p-2 space-y-1">
+        <!-- pestaña "Vista de Planta" — se va a llenar en los próximos pasos con los mapas de calor -->
+        <button id="tabPlanta" class="side-link" onclick="mostrarTab('planta')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></span>
+          Vista de Planta
+        </button>
+
+        <button id="tabAnalisis" class="side-link" onclick="mostrarTab('analisis')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg></span>
+          Análisis y Pareto
+        </button>
+
+        <button id="tabHistorico" class="side-link" onclick="mostrarTab('historico')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/></svg></span>
+          Histórico
+        </button>
+
+        <!-- CAMBIO: antes se llamaba "Vista de planta" (id/tab interno "dash" sin cambios, para no romper nada) -->
+        <button id="tabDash" class="side-link active" onclick="mostrarTab('dash')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="5" y="5" width="14" height="16" rx="1"/><path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6"/></svg></span>
+          Carga de datos
+        </button>
+
+        <button id="tabConstructor" class="side-link" onclick="mostrarTab('constructor')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M14.7 6.3a4 4 0 1 0-5.4 5.4L2 19l3 3 7.3-7.3a4 4 0 0 0 5.4-5.4l-3-3-3 3z"/></svg></span>
+          Constructor de planta
+        </button>
+
+        <!-- pestaña "Acerca de" — se va a llenar con tu texto en un paso posterior -->
+        <button id="tabAcerca" class="side-link" onclick="mostrarTab('acerca')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><line x1="12" y1="10" x2="12" y2="16"/><circle cx="12" cy="7" r="0.6" fill="currentColor" stroke="none"/></svg></span>
+          Acerca de
+        </button>
+      </nav>
+      <div class="mt-auto p-4 border-t border-slate-700/70 text-[11px] text-slate-400">
+        <div class="uppercase font-bold text-slate-300 mb-2">Estado del sistema</div>
+        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Registro local activo</div>
+        <div class="mt-2">KIRA v2.0 <br> © 2026 DMBE Systems</div>
+      </div>
+    </aside>
+
+    <!-- ========================================== -->
+    <!-- BLOQUE: CONTENEDOR PRINCIPAL Y CABECERA   -->
+    <!-- ========================================== -->
+    <div class="app-main">
+      <header id="headerOperativo" class="mb-3 no-print">
+        <div class="flex flex-wrap justify-between items-start gap-3 mb-3">
+          <div>
+            <h1 class="text-4xl font-black text-slate-800 tracking-tight">Control Operativo de Producción</h1>
+            <p class="text-2s text-slate-500">Gestión de paradas, vacío de horno y acciones correctivas</p>
+          </div>
+          <div class="header-actions flex gap-2">
+            <button class="btn px-4 py-2 text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="imprimirVista()">Imprimir</button>
+            <button class="btn px-4 py-2 text-sm bg-rose-600 text-white hover:bg-rose-700" onclick="generarAsakai()">Reporte ASAKAI (PDF)</button>
+            <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700" onclick="guardarExcel()">Guardar turno / Excel</button>
+            <!-- BOTÓN: Borrar pantalla para el nuevo turno -->
+             <button class="btn px-4 py-2 text-sm bg-slate-700 text-white hover:bg-slate-800" onclick="solicitarBorrarPantalla()">Borrar pantalla</button>
+          </div>
+        </div>
+        <!-- Panel de control de sesión operativa (Restaurado y visible) -->
+        <div class="panel px-2 py-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <label class="text-[11px] uppercase font-black text-slate-500">Fecha operativa
+            <input id="fecha" type="date" class="field mt-1" onchange="cambiarSesion()">
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500">Turno
+            <select id="turno" class="field mt-1" onchange="cambiarSesion()">
+              <option value="Mañana">Mañana</option>
+              <option value="Tarde">Tarde</option>
+              <option value="Noche">Noche</option>
+            </select>
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500">Supervisor
+            <input id="supervisor" class="field mt-1" placeholder="Nombre y apellido" oninput="guardarMeta()">
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500">Área monitoreada
+            <select id="lineaVista" class="field mt-1" onchange="cambiarAreaMonitoreada()">
+              <option value="TODAS">Todas las líneas</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <main>
+        <!-- VISTA 1: DASHBOARD Y SINÓPTICO DE LÍNEAS -->
+             <!-- ============================================================ -->
+        <!--  VISTA DE PLANTA  -->
+        <!-- con los mapas de calor de máquinas y de defectos)             -->
+        <!-- ============================================================ -->
+      <section id="vistaPlanta" class="hidden">
+          <!-- Tarjetas KPI del turno ... cols-7 indica 7 tarjetas kpis, si modificamos el numero podemos meter mas o menos tarjetas-->
+          <div class="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-4" id="vpKpis"></div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-3">
+
+  <!-- ========================= -->
+  <!-- COLUMNA IZQUIERDA -->
+  <!-- ========================= -->
+  <div class="space-y-3">
+
+    <div class="panel p-3 overflow-auto">
+      <h2 class="font-black text-slate-700 uppercase text-sm mb-2">
+        Orden crítico — Mapa de calor de máquinas
+      </h2>
+
+      <table class="table w-full text-xs text-slate-800">
+        <thead>
+          <tr>
+            <th class="text-center">#</th>
+            <th class="text-left">Máquina / Equipo</th>
+            <th class="text-center">Línea</th>
+            <th class="text-center">Min. parada</th>
+            <th class="text-center">Min. vacío</th>
+            <th class="text-left">Motivo principal</th>
+            <th class="text-center">Nivel crítico</th>
+          </tr>
+        </thead>
+        <tbody id="tablaMapaMaquinas"></tbody>
+      </table>
+    </div>
+
+    <div class="panel p-3 overflow-auto">
+      <h2 class="font-black text-rose-700 uppercase text-sm mb-2">
+        Mapa de calor de calidad — Defectos del turno
+      </h2>
+
+      <table class="table w-full text-xs text-slate-800">
+        <thead>
+          <tr>
+            <th class="text-center">#</th>
+            <th class="text-left">Defecto</th>
+            <th class="text-center">Línea</th>
+            <th class="text-center">%</th>
+            <th class="text-left">Acción correctiva</th>
+            <th class="text-center">Nivel crítico</th>
+          </tr>
+        </thead>
+        <tbody id="tablaMapaDefectos"></tbody>
+      </table>
+    </div>
+
+    <div class="panel p-3">
+      <h2 class="font-black text-slate-700 uppercase text-sm mb-2">
+        Nota del turno
+      </h2>
+
+      <div id="vpComentarioAuto"
+           class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 mb-2 leading-relaxed">
+      </div>
+
+      <label class="text-[10px] font-bold text-slate-400 uppercase">
+        Observación manual del supervisor
+      </label>
+
+      <textarea
+        id="vpNotaTurno"
+        rows="3"
+        class="field mt-1"
+        placeholder="Observaciones generales del turno..."
+        onchange="guardarNotaTurno(this.value)">
+      </textarea>
+
+      <div class="mt-2 text-[11px] text-slate-500">
+        Supervisor:
+        <b id="vpSupervisorNombre" class="text-slate-700"></b>
+      </div>
+    </div>
+
+  </div>
+
+
+
+
+  <!-- ========================= -->
+  <!-- COLUMNA DERECHA -->
+  <!-- ========================= -->
+  <div class="space-y-3 xl:sticky xl:top-3 self-start">
+
+    <!-- Últimas paradas -->
+    <div class="panel p-3 overflow-auto">
+      <h2 class="font-black text-slate-700 uppercase text-sm mb-2">
+        Últimas paradas registradas
+      </h2>
+
+      <table class="table w-full text-xs text-slate-800">
+        <thead>
+          <tr>
+            <th class="text-center">Hora</th>
+            <th class="text-left">Máquina</th>
+            <th class="text-center">Min</th>
+            <th class="text-left">Motivo</th>
+          </tr>
+        </thead>
+
+        <tbody id="tablaUltimasParadas"></tbody>
+      </table>
+    </div>
+
+    <!-- Top motivos -->
+    <div class="panel p-3">
+      <h2 class="font-black text-slate-700 uppercase text-sm mb-2">
+        Top motivos de parada
+      </h2>
+
+      <div id="topMotivosParada" class="space-y-1.5"></div>
+    </div>
+
+  </div>
+
+</div>
+        </section>
+
+        <!-- VISTA 1 (ex "Vista de planta"): CARGA DE DATOS — DASHBOARD Y SINÓPTICO DE LÍNEAS -->
+        <section id="vistaDash">
+        
+          <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-3" id="kpis"></div>
+
+          <div class="panel p-3 mb-3">
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+              <div>
+                <h2 class="font-black text-slate-700 uppercase text-sm">Sinóptico de líneas de producción</h2>
+                <p class="text-[11px] text-slate-500">Secuencia del proceso desde prensas hasta entrada de horno. Haga click en una máquina para registrar o gestionar paradas.</p>
+              </div>
+              <div class="flex gap-2 no-print">
+                <button class="btn bg-sky-600 text-white hover:bg-sky-700 text-xs py-1.5" onclick="abrirParada()">Registrar parada</button>
+                <button class="btn bg-amber-600 text-white hover:bg-amber-700 text-xs py-1.5" onclick="abrirAccion()">Acción correctiva</button>
+                <button class="btn bg-slate-600 text-white hover:bg-slate-700 text-xs py-1.5" onclick="abrirIndicadores()">Indicadores y objetivos</button>
+              </div>
+            </div>
+            <div id="maquinas"></div>
+          </div>
+
+         <div class="desktop-grid grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div class="panel p-3 flex flex-col">
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-l font-black text-emerald-700 uppercase">Gestión y registro de acciones correctivas</h3>
+                <span id="cantidadAcciones" class="badge bg-emerald-100 text-emerald-800">0</span>
+              </div>
+              <p class="text-[12px] text-slate-500 mb-2">Ajustes y mejoras realizadas durante el turno sin requerir parada de línea:</p>
+              <div id="accionesRecientes" class="space-y-2 flex-1 max-h-56 overflow-auto border border-slate-200 p-2 rounded bg-slate-50"></div>
+              <div class="mt-2 text-right">
+                <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white text-2s py-1 hover:bg-emerald-700" onclick="abrirAccion()">+ Agregar nueva acción correctiva</button>
+              </div>
+            </div>
+
+            <!-- ============================================================ -->
+            <!--  CONTROL DE CALIDAD — DEFECTOS DEL TURNO          -->
+            <!-- Acá el operador carga qué % de piezas salió con cada defecto -->
+            <!-- ============================================================ -->
+            <div class="panel p-3 flex flex-col">
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-l font-black text-rose-700 uppercase">Control de calidad — Defectos del turno</h3>
+                <span id="cantidadDefectos" class="badge bg-rose-100 text-rose-800">0</span>
+              </div>
+              <p class="text-[12px] text-slate-500 mb-2">Porcentaje de piezas con defecto detectado durante el turno, por tipo de defecto:</p>
+              <div id="defectosRecientes" class="space-y-2 flex-1 max-h-56 overflow-auto border border-slate-200 p-2 rounded bg-slate-50"></div>
+              <div class="mt-2 text-right">
+                <button class="btn px-4 py-2 text-sm bg-rose-600 text-white text-2s py-1 hover:bg-rose-700" onclick="abrirDefecto()">+ Agregar defecto</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+     <!-- VISTA 2: HISTÓRICO DE PARADAS -->
+        <section id="vistaHistorico" class="hidden">
+          <div class="panel p-3 mb-3 no-print">
+          <div class="flex flex-wrap gap-4 items-end">
+              <label class="text-[12px] font-bold text-slate-500 relative" style="width:220px;">Buscar
+                <span class="absolute left-2 text-slate-400 text-xs pointer-events-none" style="top:22px;"> 🔍 </span>
+                <input id="histBuscar" type="text" class="field mt-1" style="padding-left:26px;width:100%;" placeholder="   Buscar... " oninput="renderHistorico()">
+              </label>
+              <label class="text-[12px] font-bold text-slate-500" style="flex:1;min-width:100px;">Desde<input id="histDesde" type="date" class="field mt-1" style="width:100%;"></label>
+              <label class="text-[12px] font-bold text-slate-500" style="flex:1;min-width:100px;">Hasta<input id="histHasta" type="date" class="field mt-1" style="width:100%;"></label>
+              <label class="text-[12px] font-bold text-slate-500" style="flex:1;min-width:100px;">Línea
+                <select id="histLinea" class="field mt-1" style="width:100%;"><option value="">Todas</option></select>
+              </label>
+              <!-- Selector de turno agregado al histórico -->
+              <label class="text-[12px] font-bold text-slate-500" style="flex:1;min-width:100px;">Turno
+                <select id="histTurno" class="field mt-1" style="width:100%;">
+                  <option value="">Todos</option>
+                  <option value="Mañana">Mañana</option>
+                  <option value="Tarde">Tarde</option>
+                  <option value="Noche">Noche</option>
+                </select>
+              </label>
+              <label class="text-[12px] font-bold text-slate-500" style="flex:1;min-width:100px;">Producto
+                <input id="histProducto" type="text" class="field mt-1" style="width:100%;" placeholder="Ej: ARUSHA ARENA">
+              </label>
+              <label class="text-[12px] font-bold text-slate-500" style="flex:1;min-width:100px;">Formato
+                <input id="histFormato" type="text" class="field mt-1" style="width:100%;" placeholder="Ej: 45x45">
+              </label>
+              <button class="btn bg-sky-700 text-white self-end hover:bg-sky-800" onclick="renderHistorico()">Aplicar filtros</button>
+            </div>
+          </div>
+       <div class="panel p-3 overflow-auto">
+            <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Histórico de paradas</h2>
+            <table class="table w-full text-xs text-slate-800">
+              <thead><tr><th class="text-center">Fecha</th><th class="text-center">Turno</th><th class="text-center">Línea</th><th class="text-center">Producto</th><th class="text-center">Formato</th><th class="text-center">Equipo</th><th class="text-center">Parada</th><th class="text-center">Vacío horno</th><th class="text-center">Motivo</th><th class="text-left">Observaciones</th><th class="no-print"></th></tr></thead>
+              <tbody id="tablaHistorico"></tbody>
+            </table>
+          </div>
+
+          <!-- ============================================================ -->
+          <!-- HISTÓRICO DE ACCIONES CORRECTIVAS                     -->
+          <!-- Se filtra con los mismos campos de arriba (fecha/línea/turno/búsqueda) -->
+          <!-- ============================================================ -->
+          <div class="panel p-3 overflow-auto mt-3">
+            <h2 class="font-black text-amber-700 uppercase text-sm mb-2">Histórico de acciones correctivas</h2>
+            <table class="table w-full text-xs text-slate-800">
+              <thead><tr><th class="text-center">Fecha</th><th class="text-center">Turno</th><th class="text-center">Línea</th><th class="text-center">Hora</th><th class="text-center">Equipo / Sector</th><th class="text-left">Acción realizada</th><th class="text-center">Responsable</th><th class="no-print"></th></tr></thead>
+              <tbody id="tablaHistoricoAcciones"></tbody>
+            </table>
+          </div>
+
+          <!-- ============================================================ -->
+          <!-- HISTÓRICO DE DEFECTOS DE CALIDAD                      -->
+          <!-- Se filtra con los mismos campos de arriba (fecha/línea/turno/búsqueda) -->
+          <!-- ============================================================ -->
+          <div class="panel p-3 overflow-auto mt-3">
+            <h2 class="font-black text-rose-700 uppercase text-sm mb-2">Histórico de defectos de calidad</h2>
+            <table class="table w-full text-xs text-slate-800">
+              <thead><tr><th class="text-center">Fecha</th><th class="text-center">Turno</th><th class="text-center">Línea</th><th class="text-center">Defecto</th><th class="text-center">%</th><th class="text-left">Acción correctiva</th><th class="text-left">Observaciones</th><th class="no-print"></th></tr></thead>
+              <tbody id="tablaHistoricoDefectos"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- VISTA 3: ANÁLISIS Y PARETO -->
+        <section id="vistaAnalisis" class="hidden">
+          <!-- Selector de alcance temporal para los gráficos de este panel.
+               La línea la sigue eligiendo el selector "Área monitoreada" del header. -->
+          <div class="panel p-2 mb-3 no-print flex flex-wrap gap-2 items-center">
+            <span class="text-[11px] font-black text-slate-500 uppercase">Alcance de los gráficos:</span>
+            <button id="btnAnalisisTurno" class="btn bg-sky-700 text-white text-xs py-1.5" onclick="cambiarModoAnalisis('turno')">Turno actual</button>
+            <button id="btnAnalisisSemanal" class="btn bg-white border border-slate-300 text-slate-700 text-xs py-1.5" onclick="cambiarModoAnalisis('semanal')">Histórico semanal</button>
+          </div>
+
+          <!-- ============================================================ -->
+          <!-- SEPARACIÓN VISUAL — BLOQUE 1: PARADAS Y VACÍOS DE HORNO -->
+          <!-- Mismo criterio de agrupación por tipo de dato que el Histórico -->
+          <!-- ============================================================ -->
+          <h3 class="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2 mt-1">Análisis de paradas y vacíos de horno</h3>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
+            <div class="panel p-3">
+              <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Pareto de causas</h2>
+              <div class="h-72"><canvas id="chartPareto"></canvas></div>
+            </div>
+            <div class="panel p-3">
+              <h2 class="font-black text-amber-700 uppercase text-sm mb-2">Comparación por turno</h2>
+              <div class="h-72"><canvas id="chartTurnos"></canvas></div>
+            </div>
+            <div class="panel p-3 xl:col-span-2">
+              <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Top 5 máquinas con más minutos de parada</h2>
+              <div class="h-72"><canvas id="chartTopMaquinas"></canvas></div>
+            </div>
+          </div>
+
+          <!-- ============================================================ -->
+          <!--  SEPARACIÓN VISUAL — BLOQUE 2: CALIDAD / DEFECTOS       -->
+          <!-- ============================================================ -->
+          <h3 class="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2">Análisis de calidad — defectos</h3>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
+            <div class="panel p-3">
+              <h2 class="font-black text-rose-700 uppercase text-sm mb-2">Pareto de defectos de calidad (Top 6)</h2>
+              <div class="h-72"><canvas id="chartParetoDefectos"></canvas></div>
+            </div>
+
+            <!-- comparación de qué defecto le pega más a cada turno -->
+            <div class="panel p-3">
+              <h2 class="font-black text-purple-700 uppercase text-sm mb-2">Defectos por turno (Mañana / Tarde / Noche)</h2>
+              <div class="h-72"><canvas id="chartDefectosPorTurno"></canvas></div>
+            </div>
+          </div>
+
+          <div class="panel p-3">
+            <h2 class="font-black text-emerald-700 uppercase text-sm mb-2">Lectura para plan de acción</h2>
+            <div id="hallazgos" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
+          </div>
+        </section>
+        
+
+        <!-- VISTA 4: CONSTRUCTOR DE PLANTA -->
+        <section id="vistaConstructor" class="hidden">
+          <div class="panel p-4 mb-3">
+            <div class="flex flex-wrap justify-between items-start gap-3">
+              <div>
+                <div class="text-[10px] font-black uppercase tracking-[.12em] text-sky-700">Configuración operativa</div>
+                <h2 class="text-xl font-black text-slate-800">Constructor de planta</h2>
+                <p class="text-xs text-slate-500 max-w-3xl">Agregue, edite, ordene o archive líneas y equipos. Los elementos que tengan registros históricos no se borran definitivamente.</p>
+              </div>
+              <button class="btn bg-sky-600 text-white hover:bg-sky-700 no-print" onclick="abrirEditorLinea()">+ Agregar línea</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-3">
+            <div class="panel p-3">
+              <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-2">
+                <h3 class="text-xs font-black uppercase text-slate-700">Líneas de producción</h3>
+                <span id="contadorLineas" class="badge bg-slate-100 text-slate-600">0</span>
+              </div>
+              <div id="constructorLineas" class="space-y-2"></div>
+            </div>
+            <div class="panel p-3">
+              <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-200 pb-2 mb-2">
+                <div>
+                  <h3 id="tituloEquiposConstructor" class="text-xs font-black uppercase text-slate-700">Equipos de la línea</h3>
+                  <p id="detalleLineaConstructor" class="text-[10px] text-slate-500">Seleccione una línea para administrar sus equipos.</p>
+                </div>
+                <button id="btnAgregarEquipo" class="btn bg-slate-600 text-white hover:bg-slate-700 no-print" onclick="abrirEditorEquipo()" disabled>+ Agregar equipo</button>
+              </div>
+            <div id="constructorEquipos" class="overflow-auto"></div>
+            </div>
+          </div>
+        </section>
+
+ <!-- ============================================================ -->
+<!-- ACERCA DE -->
+<!-- ============================================================ -->
+<section id="vistaAcerca" class="hidden">
+
+  <!-- ============================================================ -->
+  <!-- PORTADA -->
+  <!-- ============================================================ -->
+  <div class="panel p-6 mb-4">
+
+    <div class="text-center">
+
+      <!-- AQUÍ LUEGO IRÁ EL LOGO DE DMBE SYSTEMS -->
+
+      <h1 class="text-6xl font-black tracking-wide text-sky-700 mt-2">
+        KIRA
+      </h1>
+
+      <h2 class="text-2xl font-bold text-slate-700 mt-2">
+        Industrial Software Platform
+      </h2>
+
+      <p class="text-sm text-slate-500 mt-3">
+        Versión 2.0 · Desarrollado por <strong>DMBE Systems</strong>
+      </p>
+
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- NUESTRA VISIÓN -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-5 mb-4">
+
+    <h2 class="text-xl font-black text-slate-800 mb-3">
+      Nuestra Visión
+    </h2>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      KIRA Plataforma de Análisis de Producción nació a partir de una necesidad
+      real dentro de la industria.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Durante años de experiencia en una planta de producción fue posible
+      observar que gran parte de la información utilizada para la toma de
+      decisiones se encontraba dispersa entre planillas, registros manuales y
+      distintos sistemas, dificultando el análisis de las verdaderas causas que
+      afectan la productividad.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Con esa realidad como punto de partida, KIRA fue desarrollada para
+      transformar esos datos en información clara, organizada y útil para
+      operadores, supervisores, responsables de producción y equipos de mejora
+      continua.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Más que registrar tiempos de parada, la plataforma busca facilitar la
+      identificación de oportunidades de mejora, reducir pérdidas operativas y
+      promover una cultura basada en indicadores objetivos y decisiones
+      fundamentadas.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7">
+      Creemos que el conocimiento de los procesos es la base para construir una
+      industria más eficiente, competitiva y preparada para los desafíos del
+      futuro.
+    </p>
+
+    <blockquote class="border-l-4 border-sky-600 pl-4 italic text-slate-700 font-semibold mt-5">
+      "No se puede mejorar aquello que no se puede medir."
+    </blockquote>
+
+    <p class="text-sm text-slate-600 leading-7 mt-5">
+      KIRA fue diseñada para acompañar a las personas, simplificar su trabajo y
+      convertir los datos de producción en conocimiento que impulse la mejora
+      continua.
+    </p>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- NUESTRA MISIÓN -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-5 mb-4">
+
+    <h2 class="text-xl font-black text-slate-800 mb-3">
+      Nuestra Misión
+    </h2>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Desarrollar una plataforma confiable, intuitiva y adaptable que permita
+      a las organizaciones registrar, analizar e interpretar la información de
+      sus procesos productivos, facilitando la toma de decisiones basada en
+      datos.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7">
+      Nuestro compromiso es ofrecer una solución creada
+      <strong>desde la industria y para la industria</strong>,
+      capaz de evolucionar junto a las necesidades de cada empresa y contribuir
+      al fortalecimiento de una cultura de mejora continua, innovación y
+      excelencia operativa.
+    </p>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SIGNIFICADO DE KIRA -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-5 mb-4">
+
+    <h2 class="text-xl font-black text-slate-800 mb-3">
+      El significado de KIRA
+    </h2>
+
+    <p class="text-sm text-slate-600 leading-7">
+      El nombre <strong>KIRA</strong> representa los valores que inspiran esta
+      plataforma: <strong>resiliencia, compromiso, innovación y mejora
+      continua</strong>.
+      Es el recordatorio de que incluso frente a los mayores desafíos siempre
+      existe la posibilidad de aprender, evolucionar y seguir construyendo un
+      futuro mejor.
+    </p>
+
+  </div>
+
+   <!-- ============================================================ -->
+  <!-- DMBE SYSTEMS -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-5 mb-4">
+
+    <h2 class="text-xl font-black text-slate-800 mb-3">
+      DMBE Systems
+    </h2>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      <strong>DMBE Systems</strong> es una empresa dedicada al desarrollo de
+      soluciones de software para la industria, orientada a impulsar la
+      transformación digital de los procesos productivos mediante herramientas
+      intuitivas, confiables y de alto valor agregado.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Nuestra misión es convertir los datos operativos en información
+      estratégica que contribuya a mejorar la productividad, la calidad y la
+      toma de decisiones dentro de las organizaciones.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7">
+      Creemos que la innovación nace donde los procesos ocurren todos los días.
+      Por ello, cada solución desarrollada por DMBE Systems tiene como objetivo
+      responder a necesidades reales de la industria, acompañando a las
+      empresas en su camino hacia la mejora continua y la Industria 4.0.
+    </p>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- AGRADECIMIENTOS -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-5 mb-4">
+
+    <h2 class="text-xl font-black text-slate-800 mb-3">
+      Agradecimientos
+    </h2>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      El desarrollo de <strong>KIRA Industrial Software Platform</strong>
+      no habría sido posible sin el acompañamiento, la experiencia y la
+      colaboración de quienes forman parte del entorno industrial.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Deseamos expresar un especial agradecimiento al
+      <strong>Sr. Marcelo Molina</strong>, por su compromiso en la validación
+      de la plataforma mediante la carga de datos reales de producción.
+      Sus pruebas, observaciones y sugerencias fueron fundamentales para
+      perfeccionar las funcionalidades del sistema y adecuarlas a las
+      necesidades operativas de una planta industrial.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7 mb-3">
+      Asimismo, extendemos nuestro agradecimiento al
+      <strong>Sr. Leonardo Fonzalida</strong>, supervisor de producción,
+      por brindar la confianza y la oportunidad de implementar este proyecto
+      dentro del entorno operativo. Su apoyo hizo posible evaluar KIRA en
+      condiciones reales de trabajo, fortaleciendo el desarrollo de una
+      plataforma concebida para quienes forman parte de la industria.
+    </p>
+
+    <p class="text-sm text-slate-600 leading-7">
+      Nuestro más sincero reconocimiento también a operadores, supervisores,
+      técnicos, personal de mantenimiento, calidad e ingeniería, cuya
+      experiencia y compromiso diario continúan inspirando la evolución de esta
+      plataforma. Cada aporte recibido reafirma el propósito de desarrollar una
+      herramienta creada <strong>desde la industria y para la industria</strong>.
+    </p>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- INFORMACIÓN DEL PRODUCTO -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-5 mb-4">
+
+    <h2 class="text-xl font-black text-slate-800 mb-4">
+      Información del Producto
+    </h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 text-sm">
+
+      <div>
+        <span class="font-bold text-slate-700">Producto</span><br>
+        KIRA Industrial Software Platform
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Versión</span><br>
+        2.0
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Desarrollador</span><br>
+        DMBE Systems
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Fundador</span><br>
+        Guillermo S. Albeiro
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Industria objetivo</span><br>
+        Manufactura e Industria 4.0
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Estado del proyecto</span><br>
+        Validación industrial
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Licencia</span><br>
+        Comercial
+      </div>
+
+      <div>
+        <span class="font-bold text-slate-700">Año de lanzamiento</span><br>
+        2026
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MENSAJE FINAL -->
+  <!-- ============================================================ -->
+
+  <div class="panel p-6 text-center">
+
+    <blockquote class="italic text-slate-700 text-lg leading-8 max-w-4xl mx-auto">
+      "La verdadera innovación no consiste únicamente en desarrollar
+      tecnología, sino en crear herramientas que ayuden a las personas a
+      trabajar mejor, tomar mejores decisiones y construir una industria más
+      eficiente, inteligente y preparada para el futuro."
+    </blockquote>
+
+    <div class="mt-8 text-2xl font-black text-sky-700">
+      KIRA
+    </div>
+
+    <div class="text-slate-600 font-semibold">
+      Industrial Software Platform
+    </div>
+
+    <div class="text-sm text-slate-500 mt-2">
+      Powered by DMBE Systems
+    </div>
+
+  </div>
+
+</section>
+
+      </main>
+    </div> <!-- cierra .app-main -->
+  </div> <!-- cierra .app-shell -->
+
+  <!-- ============================================================
+     ASISTENTE DE ANÁLISIS — ícono flotante + panel de chat
+     No usa IA externa: es análisis estadístico en JS puro sobre
+     los datos que ya tiene KIRA. Vive fuera del app-shell para
+     verse en cualquier pestaña sin que mostrarTab() lo oculte.
+     ============================================================ -->
+  <button id="btnAsistente" class="asistente-fab" onclick="alternarAsistente()" title="Asistente de análisis">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </svg>
+  </button>
+
+  <aside id="panelAsistente" class="asistente-panel hidden">
+    <header class="asistente-header">
+      <div class="flex items-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+        </svg>
+        <span>Asistente de Análisis KIRA</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <button onclick="limpiarChatAsistente()" class="asistente-limpiar" title="Limpiar conversación">🗑️</button>
+        <button onclick="alternarAsistente()" class="asistente-cerrar" title="Cerrar">✕</button>
+      </div>
+    </header>
+
+    <div id="asistenteMensajes" class="asistente-mensajes">
+      <div class="asistente-msg asistente-msg-bot">
+        Hola, soy el asistente de análisis de KIRA. No uso IA externa — trabajo 100% con los datos que ya cargaste. Elegí una consulta o escribí el nombre de un equipo.
+      </div>
+    </div>
+
+    <div id="asistentePreguntas" class="asistente-preguntas"></div>
+
+    <form id="formAsistente" class="asistente-input-row" onsubmit="return enviarConsultaAsistente(event)">
+      <input id="asistenteInput" type="text" class="field" placeholder="Ej: Prensa 1, resumen, tendencias..." autocomplete="off">
+      <button type="submit" class="btn bg-sky-700 text-white text-xs">Enviar</button>
+    </form>
+  </aside>
+
+  <!-- ============================================================
+     MODAL: REGISTRO / EDICIÓN DE PARADAS
+     Diseño ejecutivo compacto para carga rápida en planta
+     Mantiene IDs y funciones originales
+     ============================================================ -->
+<div id="modalParada"
+  class="modal fixed inset-0 hidden z-50 bg-slate-950/60 backdrop-blur-sm no-print">
+
+  <!-- CONTENEDOR DEL MODAL -->
+  <div class="min-h-full w-full flex items-center justify-center p-2 sm:p-3">
+
+    <form
+      class="panel w-full max-w-3xl max-h-[94vh] flex flex-col overflow-hidden bg-white shadow-2xl rounded-xl border border-slate-200"onsubmit="guardarParada(event)"autocomplete="off">
+      <!-- ======================================================
+           CABECERA
+           ====================================================== -->
+      <div class="shrink-0 px-4 sm:px-5 py-3 border-b border-slate-200 bg-gradient-to-r from-white to-slate-50">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5 min-w-0">
+
+            <!-- Icono -->
+            <div class="w-8 h-8 shrink-0 rounded-lg bg-sky-100 border border-sky-200 flex items-center justify-center"><span class="text-sky-700 text-lg font-black">!</span></div>
+            <!-- Título -->
+            <div class="min-w-0">
+              <div class="flex items-center gap-2"><h2 id="modalParadaTitulo"class="font-black text-slate-800 text-base uppercasetracking-tight truncate">Registrar parada</h2>
+
+                <span class="hidden sm:inline-flex px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-[8px] font-black tracking-wider text-sky-700 uppercase">Producción</span>
+              </div>
+
+              <p class="text-[11px] text-slate-400">Registro rápido de evento</p>
+            </div>
+          </div>
+
+          <!-- Cerrar -->
+          <button
+            type="button"
+            onclick="cerrar('modalParada')"
+            class="w-8 h-8 shrink-0 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50 transition-all flex items-center justify-center font-bold text-base"aria-label="Cerrar">✕
+          </button>
+        </div>
+      </div>
+      <input type="hidden" id="editParadaId">
+
+      <!-- ======================================================
+           CUERPO CON SCROLL
+           ====================================================== -->
+      <div class="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
+        <div class="space-y-4">
+
+          <!-- ==================================================
+               SECCIÓN: UBICACIÓN Y MOMENTO
+               ================================================== -->
+          <section>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-sky-600"></span> <h3 class="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"> Ubicación y momento </h3>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+
+              <!-- Línea -->
+              <div class="sm:col-span-6"><label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Línea</label>
+                <input id="pLineaDisplay"type="text" readonly class="field w-full bg-slate-100 border-slate-200 text-slate-700 font-bold"><input type="hidden" id="pLinea">
+              </div>
+
+              <!-- Hora -->
+              <div class="sm:col-span-3"><label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Hora <span class="text-rose-600">*</span></label>
+                <input id="pHora" type="time" required class="field w-[115px] max-w-full font-bold text-center bg-white focus:ring-2 focus:ring-sky-100">
+              </div>
+
+              <!-- Eventos -->
+              <div class="sm:col-span-3"><label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1"> Eventos <span class="text-rose-600">*</span></label>
+                <input id="pEventos" type="number" min="1" value="1" required class="field w-[85px] font-bold text-center text-sky-800 bg-sky-50/70 border-sky-200 focus:ring-2 focus:ring-sky-100">
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================================================
+               SECCIÓN: IDENTIFICACIÓN DEL EVENTO
+               ================================================== -->
+          <section>
+            <div class="flex items-center gap-2 mb-2"><span class="w-1.5 h-1.5 rounded-full bg-violet-600"></span><h3 class="text-[9px] font-black uppercase tracking-[0.14em]text-slate-500">Identificación del evento</h3></div>
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+
+              <!-- Equipo -->
+              <div class="sm:col-span-5"><label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1"> Máquina / equipo <span class="text-rose-600">*</span></label>
+                <select id="pEquipo" class="field w-full font-semibold bg-white focus:ring-2 focus:ring-violet-100" onchange="actualizarSubEquipoSelect(); limpiarYcargarMotivos()"></select>
+              </div>
+
+
+              <!-- Motivo -->
+              <div class="sm:col-span-7"><label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1"> Motivo <span class="text-rose-600">*</span></label>
+                <input id="pMotivo" type="text" list="listaMotivosParada" required placeholder="Buscar o escribir el motivo..." class="field w-full font-medium bg-white focus:ring-2 focus:ring-violet-100">
+                <datalist id="listaMotivosParada"></datalist>
+              </div>
+            </div>
+
+            <!-- SUBEQUIPO -->
+            <div id="subEquipoContainer" class="hidden mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <div class="flex flex-wrap items-center gap-3"><span id="subEquipoLabel" class="text-[10px] font-bold text-amber-900">Seleccione variante:</span>
+                <select id="pSubEquipo" class="field w-[180px] max-w-full bg-white font-semibold">
+                  <option value="1">Variante 1</option>
+                  <option value="2">Variante 2</option>
+                </select>
+              </div>
+            </div>
+
+          </section>
+
+          <!-- ==================================================
+               SECCIÓN: IMPACTO DE LA PARADA
+               ================================================== -->
+          <section>            
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-rose-600"></span><h3 class="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"> Impacto de la parada</h3></div>
+              <span class="text-[9px] text-slate-400 hidden sm:block">Valores en minutos</span>
+            </div>
+
+            <!-- TARJETAS DE TIEMPO -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+              <!-- Minutos de parada -->
+              <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 hover:border-sky-300 hover:shadow-sm transition-all">
+                <div class="flex items-center justify-between gap-3">
+
+                  <!-- Información -->
+                  <div class="flex items-center gap-2.5"><span class="w-8 h-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 text-sm font-black">⏱</span><div>
+                      <p class="text-[9px] font-black uppercase tracking-wider text-slate-400">Tiempo detenido</p>
+                      <h4 class="text-xs font-black text-slate-800">Minutos de parada</h4>
+                    </div>
+                  </div>
+
+                  <!-- Input compacto -->
+                  <div class="flex items-center gap-1.5"><input id="pMinutos" type="number" min="1" max="480" placeholder="0" required class="field w-[85px] h-9 text-center text-base font-black text-slate-900 bg-slate-50">
+                    <span class="text-[10px] font-bold text-slate-400">min</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Minutos de vacío -->
+              <div class="rounded-xl border border-slate-200 bg-white px-3 py-3
+                       hover:border-amber-300 hover:shadow-sm transition-all">
+
+                <div class="flex items-center justify-between gap-3">
+
+                  <!-- Información -->
+                  <div class="flex items-center gap-2.5">
+
+                    <span
+                      class="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100
+                             flex items-center justify-center text-amber-600
+                             text-sm font-black">
+                      ◌
+                    </span>
+
+                    <div>
+                      <p class="text-[9px] font-black uppercase tracking-wider
+                                text-slate-400">
+                        Sin producción
+                      </p>
+
+                      <h4 class="text-xs font-black text-slate-800">
+                        Vacío de horno
+                      </h4>
+                    </div>
+
+                  </div>
+
+
+                  <!-- Input compacto -->
+                  <div class="flex items-center gap-1.5">
+
+                    <input
+                      id="pVacio"
+                      type="number"
+                      min="0"
+                      max="480"
+                      value="0"
+                      required
+                      class="field w-[85px] h-9 text-center text-base
+                             font-black text-slate-900 bg-slate-50">
+
+                    <span class="text-[10px] font-bold text-slate-400">
+                      min
+                    </span>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </section>
+
+
+          <!-- ==================================================
+               SECCIÓN: OBSERVACIONES
+               ================================================== -->
+          <section>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <h3 class="text-[9px] font-black uppercase tracking-[0.14em]text-slate-500"> Información adicional </h3>
+
+              <span class="text-[9px] text-slate-400">
+                Opcional
+              </span>
+            </div>
+
+            <textarea
+              id="pObs"
+              rows="2"
+              placeholder="Detalle de la falla o intervención realizada..."
+              class="field w-full font-medium resize-none leading-relaxed
+                     focus:ring-2 focus:ring-slate-100">
+            </textarea>
+
+          </section>
+        </div>
+      </div>
+
+      <!-- ======================================================
+           PIE: ACCIONES
+           ====================================================== -->
+      <div
+        class="shrink-0 px-4 sm:px-5 py-3 border-t border-slate-200
+               bg-slate-50/80">
+
+        <div class="flex items-center justify-between gap-3">
+          <!-- ELIMINAR: SE INSERTA DINÁMICAMENTE -->
+          <div id="btnEliminarContainer"></div>
+
+
+          <!-- ACCIONES PRINCIPALES -->
+          <div class="flex gap-2">
+            <button
+              type="button"
+              onclick="cerrar('modalParada')"
+              class="btn px-4 py-2 bg-white border border-slate-300
+                     text-slate-600 hover:bg-slate-100 text-xs
+                     font-black rounded-lg transition-all">Cancelar</button>
+
+            <button
+              type="submit"
+              class="btn px-5 py-2 bg-sky-700 text-white hover:bg-sky-800
+                     active:scale-[0.98] text-base font-black rounded-lg
+                     shadow-md shadow-sky-700/20 transition-all"> <span class="flex items-center justify-center gap-2"> Guardar parada<span>→</span></span> </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+
+
+
+  <!-- Modal de gestión rápida por equipo -->
+  <div id="modalMaquinaGestion" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+    <div class="panel w-full max-w-xl p-4 bg-white shadow-xl">
+      <div class="flex justify-between mb-3"><h2 id="gestEquipoTitulo" class="font-black text-sky-700 text-base">Gestión de equipo</h2><button type="button" onclick="cerrar('modalMaquinaGestion')">✕</button></div>
+      <p class="text-xs text-slate-500 mb-3">Registros de paradas para este equipo en el turno actual:</p>
+      <div id="listaParadasEquipo" class="space-y-2 max-h-64 overflow-auto mb-4 border border-slate-200 p-2 rounded"></div>
+      <div class="flex justify-between items-center">
+        <button class="btn bg-sky-600 text-white text-xs hover:bg-sky-700" onclick="cerrar('modalMaquinaGestion'); abrirParadaDesdeEquipoGest();">+ Agregar nueva parada en este equipo</button>
+        <button class="btn bg-slate-200 text-slate-700 text-xs hover:bg-slate-300" onclick="cerrar('modalMaquinaGestion')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de acción correctiva -->
+ <div id="modalAccion" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+    <form class="panel w-full max-w-xl p-4 bg-white shadow-xl" onsubmit="guardarAccion(event)">
+      <div class="flex justify-between mb-3"><h2 id="modalAccionTitulo" class="font-black text-amber-700">Acción correctiva sin parada</h2><button type="button" onclick="cerrar('modalAccion')">✕</button></div>
+      <!--  guarda el id de la acción cuando se está editando; vacío = alta nueva -->
+      <input type="hidden" id="editAccionId">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label class="text-xs font-bold">Línea<select id="aLinea" class="field mt-1"></select></label>
+        <label class="text-xs font-bold">Hora<input id="aHora" type="time" class="field mt-1" required></label>
+        <label class="text-xs font-bold md:col-span-2">Equipo o sector<input id="aEquipo" class="field mt-1" required></label>
+        <label class="text-xs font-bold md:col-span-2">Acción realizada<textarea id="aDetalle" rows="3" class="field mt-1" required></textarea></label>
+        <label class="text-xs font-bold md:col-span-2">Responsable<input id="aResponsable" class="field mt-1"></label>
+      </div>
+      <div class="flex justify-between items-center mt-4">
+        <!--  acá se inyecta el botón "Eliminar acción" solo cuando estamos editando -->
+        <div id="btnEliminarAccionContainer"></div>
+        <div class="flex gap-2">
+          <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalAccion')">Cancelar</button>
+          <button class="btn bg-amber-600 text-white hover:bg-amber-700">Guardar acción</button>
+        </div>
+      </div>
+    </form>
+  </div>
+                    
+      <!-- ============================================================ -->
+  <!-- MODAL: REGISTRO DE DEFECTO DE CALIDAD                        -->
+  <!-- Carga rápida de un tipo de defecto y su % sobre la producción -->
+  <!-- ============================================================ -->
+
+  <div id="modalDefecto" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+    <form class="panel w-full max-w-lg p-4 bg-white shadow-xl" onsubmit="guardarDefecto(event)">
+      <div class="flex justify-between mb-3"><h2 id="modalDefectoTitulo" class="font-black text-rose-700">Registrar defecto de calidad</h2><button type="button" onclick="cerrar('modalDefecto')">✕</button></div>
+      <!--  guarda el id del defecto cuando se está editando; vacío = alta nueva -->
+      <input type="hidden" id="editDefectoId">
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs font-bold">Línea<select id="dLinea" class="field mt-1"></select></label>
+        <label class="text-xs font-bold">Tipo de defecto<input id="dNombre" class="field mt-1" placeholder="Ej: Suciedad sobre bizcocho" required></label>
+        <label class="text-xs font-bold">Porcentaje sobre producción (%)<input id="dPorcentaje" type="number" min="0" max="100" step="0.1" class="field mt-1" placeholder="Ej: 1.5" required></label>
+        <label class="text-xs font-bold">Acción correctiva aplicada<textarea id="dAccion" rows="2" class="field mt-1" placeholder="Ej: Ajuste de parámetros de esmaltado"></textarea></label>
+        <label class="text-xs font-bold">Observaciones<textarea id="dObs" rows="2" class="field mt-1" placeholder="Detalle adicional, condición detectada, etc."></textarea></label>
+      </div>
+      <div class="flex justify-between items-center mt-4">
+        <!-- acá se inyecta el botón "Eliminar defecto" solo cuando estamos editando -->
+        <div id="btnEliminarDefectoContainer"></div>
+        <div class="flex gap-2">
+          <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalDefecto')">Cancelar</button>
+          <button class="btn bg-rose-700 text-white hover:bg-rose-800">Guardar defecto</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+<!-- Modal de indicadores y objetivos optimizado para responsive -->
+<div id="modalIndicadores" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+  <div class="panel w-full max-w-2xl max-h-[90vh] flex flex-col bg-white shadow-xl overflow-hidden">
+    
+    <!-- Cabecera fija -->
+    <div class="flex justify-between p-4 border-b border-slate-200">
+      <h2 class="font-black text-sky-700 text-base">Control de Objetivos y Cierre de Turno</h2>
+      <button type="button" onclick="cerrar('modalIndicadores')">✕</button>
+    </div>
+
+    <!-- Cuerpo con scroll interno para que los botones nunca queden ocultos -->
+    <div class="p-4 overflow-y-auto flex-1">
+      <div id="objetivosLineasContainer" class="space-y-3"></div>
+    </div>
+
+    <!-- Pie fijo con botones accesibles -->
+    <div class="flex justify-end gap-2 p-4 border-t border-slate-200 bg-slate-50">
+      <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalIndicadores')">Cancelar</button>
+      <button type="button" class="btn bg-sky-700 text-white hover:bg-sky-800" onclick="guardarObjetivos()">Guardar y Evaluar Turno</button>
+    </div>
+
+  </div>
+</div>
+</div>
+
+  <!-- Modal del constructor de planta -->
+  <div id="modalConstructor" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+    <form class="panel w-full max-w-lg p-4 bg-white shadow-xl" onsubmit="guardarElementoPlanta(event)">
+      <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-3">
+        <div>
+          <div class="text-[9px] uppercase font-black text-sky-700">Constructor de planta</div>
+          <h2 id="tituloModalConstructor" class="font-black text-slate-800">Agregar elemento</h2>
+        </div>
+        <button type="button" onclick="cerrar('modalConstructor')">✕</button>
+      </div>
+      <input id="cModo" type="hidden">
+      <input id="cId" type="hidden">
+      <input id="cLineaId" type="hidden">
+      <div class="space-y-3">
+        <label class="block text-xs font-bold">Nombre
+          <input id="cNombre" class="field mt-1" maxlength="60" required>
+        </label>
+        <label id="campoDescripcionConstructor" class="block text-xs font-bold">Descripción de la línea
+          <input id="cDescripcion" class="field mt-1" maxlength="100" placeholder="Ej.: Prensas 1 y 2">
+        </label>
+        <label id="campoTipoConstructor" class="hidden text-xs font-bold">Tipo de equipo
+          <select id="cTipo" class="field mt-1">
+            <option value="Prensa">Prensa</option>
+            <option value="Secadero">Secadero</option>
+            <option value="Esmalte">Esmaltado / aplicaciones</option>
+            <option value="Digital">Decoración digital</option>
+            <option value="Transporte">Transporte / almacenamiento</option>
+            <option value="General">General / otro</option>
+          </select>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-4 border-t border-slate-200 pt-3">
+        <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalConstructor')">Cancelar</button>
+        <button class="btn bg-sky-700 text-white hover:bg-sky-800">Guardar cambios</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ========================================== -->
+<!-- MODAL DE ALERTAS Y CONFIRMACIONES DE KIRA -->
+<!-- ========================================== -->
+<div id="kiraModalAlerta" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 no-print">
+  <div class="panel bg-white w-full max-w-md p-6 shadow-2xl border-t-4 border-t-sky-600 rounded-lg transform transition-all">
+    <div class="flex items-start gap-3">
+      
+      <!-- Contenido central de texto con los símbolos integrados -->
+      <div class="flex-1">
+        <div class="flex items-center gap-1">
+          <span class="text-sky-600 font-black text-xl">¡</span>
+          <h3 id="kiraAlertaTitulo" class="font-black text-slate-800 text-base uppercase tracking-wide"> Aviso del Sistema </h3>
+          <span class="text-sky-600 font-black text-xl">!</span>
+        </div>
+        
+        <p id="kiraAlertaMensaje" class="text-xs text-slate-600 mt-2 leading-relaxed"></p>
+      </div>
+
+    </div>
+
+    <!-- Botonera dinámica -->
+    <div id="kiraAlertaBotones" class="mt-5 flex justify-end gap-2">
+      <button onclick="cerrarKiraAlerta()" class="btn px-4 py-2 bg-sky-700 text-white text-xs font-bold hover:bg-sky-800 rounded shadow-sm">
+        Aceptar
+      </button>
+    </div>
+  </div>
+</div>
+  
+  <section id="printReport"></section>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

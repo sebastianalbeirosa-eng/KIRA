@@ -101,6 +101,25 @@ export function guardarMeta() {
 }
 
 /**
+ * Colapsa/expande el menú lateral (sidebar). Útil sobre todo en
+ * Vista de Planta y en monitores chicos, para ganar ancho de
+ * pantalla. Como el sidebar es un flex-item, al achicarlo el
+ * contenido principal (.app-main, que es flex:1) se expande solo,
+ * sin necesidad de recalcular nada por JS. La preferencia se
+ * recuerda en localStorage entre sesiones.
+ */
+export function alternarSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.classList.toggle('colapsado');
+  try {
+    localStorage.setItem('kira_sidebar_colapsado', sidebar.classList.contains('colapsado') ? '1' : '0');
+  } catch {
+    // localStorage puede fallar en navegación privada estricta; no es crítico, se ignora.
+  }
+}
+
+/**
  * Repuebla todos los selectores de línea de la interfaz (vista, histórico,
  * acción, defecto) según las líneas activas del modelo de planta actual.
  */
@@ -152,15 +171,26 @@ window.addEventListener('load', () => {
   document.getElementById('histDesde').value = hoyLocal().slice(0, 8) + '01';
   document.getElementById('histHasta').value = hoyLocal();
 
+  // Restaurar la preferencia de sidebar colapsado/expandido, si el
+  // usuario la había dejado así en una sesión anterior.
+  try {
+    if (localStorage.getItem('kira_sidebar_colapsado') === '1') {
+      document.getElementById('sidebar')?.classList.add('colapsado');
+    }
+  } catch {
+    // localStorage puede fallar en navegación privada estricta; no es crítico, se ignora.
+  }
+
   cambiarSesion();
 });
 
 // ==========================================================
 // EXPOSICIÓN A window
 // ----------------------------------------------------------
-// mostrarTab, cambiarSesion y guardarMeta se llaman desde
-// onclick="..." / onchange="..." en index.html.
+// mostrarTab, cambiarSesion, guardarMeta y alternarSidebar se
+// llaman desde onclick="..." / onchange="..." en index.html.
 // ==========================================================
 window.mostrarTab = mostrarTab;
 window.cambiarSesion = cambiarSesion;
 window.guardarMeta = guardarMeta;
+window.alternarSidebar = alternarSidebar;

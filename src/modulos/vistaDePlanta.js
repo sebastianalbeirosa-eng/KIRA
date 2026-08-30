@@ -347,6 +347,7 @@ export function calcularKpisPlanta(l) {
   const lineasIter = l === 'TODAS' ? lineasActivas() : [lineaPorId(l)].filter(Boolean);
 
   let filasMaquinas = [];
+  let filasMapaCalor = [];
   lineasIter.forEach(lineaConfig => {
     lineaConfig.equipos.filter(e => e.activo !== false).forEach(eqConfig => {
       const regs = paradasScope.filter(x => {
@@ -361,9 +362,26 @@ export function calcularKpisPlanta(l) {
       const vacio = regs.reduce((a, x) => a + x.vacio, 0);
       const motivoPrincipal = [...regs].sort((a, b) => b.minutos - a.minutos)[0]?.motivo || '';
       filasMaquinas.push({ equipo: eqConfig.nombre, lineaNombre: lineaConfig.nombre, mins, vacio, motivo: motivoPrincipal });
+
+      // MAPA DE CALOR: a diferencia de filasMaquinas (un total por
+      // equipo), acá se agrupa por equipo + motivo. Si el equipo tuvo
+      // paradas por 2 motivos distintos, aparecen 2 filas separadas;
+      // si el mismo motivo se repitió varias veces (2+ eventos), esas
+      // sí se suman en una sola fila.
+      const porMotivo = {};
+      regs.forEach(x => {
+        const clave = x.motivo || '(sin motivo)';
+        if (!porMotivo[clave]) porMotivo[clave] = { mins: 0, vacio: 0 };
+        porMotivo[clave].mins += x.minutos;
+        porMotivo[clave].vacio += x.vacio;
+      });
+      Object.entries(porMotivo).forEach(([motivo, datos]) => {
+        filasMapaCalor.push({ equipo: eqConfig.nombre, lineaNombre: lineaConfig.nombre, mins: datos.mins, vacio: datos.vacio, motivo });
+      });
     });
   });
   filasMaquinas.sort((a, b) => b.mins - a.mins);
+  filasMapaCalor.sort((a, b) => b.mins - a.mins);
 
   // ---------- CÁLCULO DE DEFECTO PREPONDERANTE ----------
   const defectosOrdenados = [...defectosScope].sort((a, b) => b.porcentaje - a.porcentaje);
@@ -473,7 +491,7 @@ export function calcularKpisPlanta(l) {
   const egeValorColor = egeTurno >= 85 ? 'text-emerald-700' : (egeTurno >= 75 ? 'text-amber-600' : 'text-rose-700');
 
   return {
-    s, paradasScope, defectosScope, m, lineasIter, filasMaquinas,
+    s, paradasScope, defectosScope, m, lineasIter, filasMaquinas, filasMapaCalor,
     defectosOrdenados, defectoPreponderante, pctParada, pctVacio,
     maquinaCritica, nivelCritica, valorCriticaColor,
     disponibilidadEquipos, dispEqValorColor, equiposConProblema, totalEquiposScope,
@@ -489,7 +507,7 @@ export function calcularKpisPlanta(l) {
 export function renderVistaPlanta() {
   const l = valor('lineaVista');
   const {
-    s, paradasScope, defectosScope, m, lineasIter, filasMaquinas,
+    s, paradasScope, defectosScope, m, lineasIter, filasMaquinas, filasMapaCalor,
     defectosOrdenados, defectoPreponderante, pctParada, pctVacio,
     maquinaCritica, nivelCritica, valorCriticaColor,
     equiposConProblema,
@@ -578,7 +596,7 @@ export function renderVistaPlanta() {
   `;
 
   // Resto de la renderización del mapa de calor, tablas y resúmenes...
-  document.getElementById('tablaMapaMaquinas').innerHTML = filasMaquinas.length ? filasMaquinas.map((f, i) => {
+  document.getElementById('tablaMapaMaquinas').innerHTML = filasMapaCalor.length ? filasMapaCalor.map((f, i) => {
     const nivelP = nivelPorValor(f.mins, UMBRAL_PARADA);
     const nivelV = nivelPorValor(f.vacio, UMBRAL_VACIO);
     const nivelFinal = nivelP.key >= nivelV.key ? nivelP : nivelV;
@@ -631,7 +649,18 @@ export function renderVistaPlanta() {
 
   const frasesAuto = [];
   if (maquinaCritica) {
-    frasesAuto.push(`Turno con afectación destacada en <b>${esc(maquinaCritica.equipo)}</b> por "${esc(maquinaCritica.motivo)}" (${maquinaCritica.mins} min).`);
+    // Desglose por motivo de ESTA máquina específica (filasMapaCalor ya
+    // viene agrupado por equipo+motivo — ver el fix del mapa de calor).
+    const motivosDeLaCritica = filasMapaCalor
+      .filter(f => f.equipo === maquinaCritica.equipo && f.lineaNombre === maquinaCritica.lineaNombre)
+      .sort((a, b) => b.mins - a.mins);
+
+    if (motivosDeLaCritica.length > 1) {
+      const detalle = motivosDeLaCritica.map(f => `${esc(f.motivo)} ${f.mins} min`).join(', ');
+      frasesAuto.push(`Turno con afectación destacada en <b>${esc(maquinaCritica.equipo)}</b> por ${detalle}, llevando un acumulado de ${maquinaCritica.mins} min.`);
+    } else {
+      frasesAuto.push(`Turno con afectación destacada en <b>${esc(maquinaCritica.equipo)}</b> por "${esc(maquinaCritica.motivo)}" (${maquinaCritica.mins} min).`);
+    }
   } else {
     frasesAuto.push('Sin paradas relevantes registradas en este turno.');
   }

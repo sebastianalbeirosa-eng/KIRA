@@ -12,7 +12,7 @@ import { persistir } from '../nucleo/almacenamiento.js';
 import { abrir, cerrar } from '../nucleo/utilidades.js';
 import { sesion, lineasActivas, asegurarObjetivosSesion } from '../nucleo/estado.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
-import { renderTodo } from './vistaDePlanta.js';
+import { renderTodo, renderVistaPlanta } from './vistaDePlanta.js';
 
 /** Dibuja el formulario de objetivos/reales para cada línea activa, dentro del modal de indicadores. */
 export function renderObjetivosModal() {
@@ -173,6 +173,7 @@ export function guardarObjetivos() {
   persistir();
   cerrar('modalIndicadores');
   renderTodo();
+  if (!document.getElementById('vistaPlanta').classList.contains('hidden')) renderVistaPlanta();
 
   mostrarAlertaKira('¡Objetivos y datos reales del turno guardados y evaluados correctamente!', 'Control de Objetivos', 'exito');
 }

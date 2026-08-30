@@ -29,6 +29,7 @@ export function abrirDefecto(defectoObj = null) {
     document.getElementById('modalDefectoTitulo').textContent = 'Modificar defecto de calidad';
     document.getElementById('editDefectoId').value = defectoObj.id;
     document.getElementById('dLinea').value = defectoObj.linea;
+    document.getElementById('dHora').value = defectoObj.hora || '';
     document.getElementById('dNombre').value = defectoObj.nombre;
     document.getElementById('dPorcentaje').value = defectoObj.porcentaje;
     document.getElementById('dAccion').value = defectoObj.accion || '';
@@ -38,6 +39,7 @@ export function abrirDefecto(defectoObj = null) {
     document.getElementById('modalDefectoTitulo').textContent = 'Registrar defecto de calidad';
     document.getElementById('editDefectoId').value = '';
     document.getElementById('dLinea').value = valor('lineaVista') === 'TODAS' ? primeraLinea : valor('lineaVista');
+    document.getElementById('dHora').value = new Date().toTimeString().slice(0, 5);
     document.getElementById('dNombre').value = '';
     document.getElementById('dPorcentaje').value = '';
     document.getElementById('dAccion').value = '';
@@ -56,6 +58,7 @@ export function guardarDefecto(e) {
   const item = {
     id: editId || String(Date.now()),
     linea: valor('dLinea'),
+    hora: valor('dHora'),
     nombre: valor('dNombre').trim(),
     porcentaje: numero('dPorcentaje'),
     accion: valor('dAccion').trim(),
@@ -118,7 +121,7 @@ export function renderDefectos() {
   document.getElementById('defectosRecientes').innerHTML = d.length ? d.map(x => `
     <div class="flex justify-between items-start border-b border-slate-200 pb-2 bg-white p-2 rounded shadow-xs">
       <div>
-        <div class="flex justify-between font-bold text-slate-800 gap-2"><b>${esc(x.nombre)}</b><span class="text-slate-400 text-[11px]">${esc(nombreLinea(x.linea))}</span></div>
+        <div class="flex justify-between font-bold text-slate-800 gap-2"><b>${esc(x.nombre)}</b><span class="text-slate-400 text-[11px]">${x.hora ? esc(x.hora) + ' hs · ' : ''}${esc(nombreLinea(x.linea))}</span></div>
         <div class="text-[12px] text-rose-700 font-black mt-0.5">${x.porcentaje}% sobre producción</div>
         ${x.accion ? `<div class="text-[13px] text-emerald-700 mt-0.5"><b>Acción:</b> ${esc(x.accion)}</div>` : ''}
         ${x.obs ? `<div class="text-[10px] text-slate-400 italic mt-0.5">Obs: ${esc(x.obs)}</div>` : ''}

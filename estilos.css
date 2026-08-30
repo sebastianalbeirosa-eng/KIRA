@@ -33,6 +33,52 @@ body {
   height: 100vh; 
   display: flex; 
   flex-direction: column; 
+  overflow: hidden;
+  transition: flex-basis .22s ease, width .22s ease;
+}
+
+.sidebar.colapsado {
+  width: 0;
+  flex-basis: 0;
+  border-right: 0;
+}
+
+/* Botón "pestaña" para colapsar/expandir el sidebar. Se reposiciona
+   solo según el ancho actual del sidebar (230px en desktop, 190px en
+   pantallas medianas), y se oculta en mobile (el sidebar ya pasa a
+   ser una barra horizontal ahí, no tiene sentido "colapsarlo" igual). */
+.sidebar-toggle {
+  position: fixed;
+  top: 50%;
+  left: 230px;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 46px;
+  background: #071d32;
+  color: #dce8f4;
+  border: 1px solid #183953;
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  display: grid;
+  place-items: center;
+  z-index: 40;
+  transition: left .22s ease;
+}
+
+.sidebar-toggle:hover {
+  background: #10314f;
+}
+
+.sidebar-toggle svg {
+  transition: transform .22s ease;
+}
+
+.sidebar.colapsado ~ .sidebar-toggle {
+  left: 0;
+}
+
+.sidebar.colapsado ~ .sidebar-toggle svg {
+  transform: rotate(180deg);
 }
 
 .brand-mark { 
@@ -257,6 +303,8 @@ body {
 @media (max-width: 1100px) {
   .desktop-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
   .sidebar { width: 190px; flex-basis: 190px; }
+  .sidebar-toggle { left: 190px; }
+  .sidebar.colapsado ~ .sidebar-toggle { left: 0; }
 }
 
 @media (max-width: 700px) {
@@ -268,6 +316,9 @@ body {
   .app-main { padding: 8px; }
   .desktop-grid { grid-template-columns: 1fr !important; }
   .header-actions { width: 100%; overflow: auto; }
+  /* En mobile el sidebar ya es una barra horizontal compacta arriba,
+     no tiene sentido "colapsarla" con este mecanismo — se oculta el botón. */
+  .sidebar-toggle { display: none; }
 }
 
 

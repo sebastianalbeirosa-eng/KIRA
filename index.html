@@ -17,7 +17,7 @@
     <!-- ========================================== -->
     <!-- BLOQUE: BARRA LATERAL DE NAVEGACIÓN (SIDEBAR) -->
     <!-- ========================================== -->
-    <aside class="sidebar no-print">
+    <aside id="sidebar" class="sidebar no-print">
       <div class="px-6 py-5 border-b border-slate-700/70">
         <div class="flex items-center gap-4">
           <div class="brand-mark">K</div>
@@ -67,6 +67,17 @@
         <div class="mt-2">KIRA v2.0 <br> © 2026 DMBE Systems</div>
       </div>
     </aside>
+
+    <!-- Pestaña para colapsar/expandir el sidebar: siempre visible,
+         se reposiciona sola según el estado (ver estilos.css). Útil
+         sobre todo en Vista de Planta y en monitores chicos (15"/17"),
+         donde ganar ancho de pantalla ayuda a que las tarjetas no se
+         salgan del responsive. -->
+    <button id="btnColapsarSidebar" class="sidebar-toggle no-print" onclick="alternarSidebar()" title="Colapsar/expandir menú">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+    </button>
 
     <!-- ========================================== -->
     <!-- BLOQUE: CONTENEDOR PRINCIPAL Y CABECERA   -->
@@ -1091,6 +1102,7 @@
       <input type="hidden" id="editDefectoId">
       <div class="grid grid-cols-1 gap-3">
         <label class="text-xs font-bold">Línea<select id="dLinea" class="field mt-1"></select></label>
+        <label class="text-xs font-bold">Hora<input id="dHora" type="time" class="field mt-1"></label>
         <label class="text-xs font-bold">Tipo de defecto<input id="dNombre" class="field mt-1" placeholder="Ej: Suciedad sobre bizcocho" required></label>
         <label class="text-xs font-bold">Porcentaje sobre producción (%)<input id="dPorcentaje" type="number" min="0" max="100" step="0.1" class="field mt-1" placeholder="Ej: 1.5" required></label>
         <label class="text-xs font-bold">Acción correctiva aplicada<textarea id="dAccion" rows="2" class="field mt-1" placeholder="Ej: Ajuste de parámetros de esmaltado"></textarea></label>

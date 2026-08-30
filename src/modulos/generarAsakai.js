@@ -6,7 +6,7 @@
   vía window.print(). También controla la impresión simple de la
   vista actual (imprimirVista).
 
-   BUG CORREGIDO: antes, paginaAsakaiUnaHoja() no recalculaba los
+  ✅ BUG CORREGIDO: antes, paginaAsakaiUnaHoja() no recalculaba los
   KPIs industriales (disponibilidad, calidad, EGE, rendimiento) —
   leía el texto ya renderizado en el DOM de #vpKpis, que solo se
   llenaba si el usuario había visitado antes la pestaña "Vista de
@@ -222,13 +222,27 @@ function paginaAsakaiUnaHoja(linea) {
 
   const mLinea = metricas(paradasLinea);
   const objVacioMax = s.objetivos.porLinea[linea.id]?.vacioMax || 30;
-  const maquinaTop = [...paradasLinea].sort((a, b) => b.minutos - a.minutos)[0];
   const defectoTop = [...defectosLinea].sort((a, b) => b.porcentaje - a.porcentaje)[0];
 
+  // Reutiliza kpis.maquinaCritica (mismo criterio que las tarjetas de
+  // arriba y que Vista de Planta), en vez de tomar la parada individual
+  // más grande — así "afectación destacada" siempre coincide con lo que
+  // dice la tarjeta "MÁQUINA CRÍTICA" del mismo reporte.
+  const maquinaTop = kpis.maquinaCritica;
+  const motivosDeLaCritica = maquinaTop
+    ? kpis.filasMapaCalor
+        .filter(f => f.equipo === maquinaTop.equipo && f.lineaNombre === maquinaTop.lineaNombre)
+        .sort((a, b) => b.mins - a.mins)
+    : [];
+
+  const fraseAfectacion = !maquinaTop
+    ? 'Sin paradas relevantes registradas en este turno.'
+    : motivosDeLaCritica.length > 1
+      ? `Afectación destacada en <b>${esc(maquinaTop.equipo)}</b> por ${motivosDeLaCritica.map(f => `${esc(f.motivo)} ${f.mins} min`).join(', ')}, llevando un acumulado de ${maquinaTop.mins} min.`
+      : `Afectación destacada en <b>${esc(maquinaTop.equipo)}</b> por "${esc(maquinaTop.motivo)}" (${maquinaTop.mins} min).`;
+
   const frasesAuto = [
-    maquinaTop
-      ? `Afectación destacada en <b>${esc(maquinaTop.equipo)}</b> por "${esc(maquinaTop.motivo)}" (${maquinaTop.minutos} min).`
-      : 'Sin paradas relevantes registradas en este turno.',
+    fraseAfectacion,
     ...(mLinea.vacio > objVacioMax ? [`Vacío de horno por encima del objetivo (${mLinea.vacio} min vs ${objVacioMax} min).`] : []),
     ...(defectoTop ? [`Defecto de calidad más relevante: <b>${esc(defectoTop.nombre)}</b> (${defectoTop.porcentaje}%).`] : []),
     mLinea.disponibilidad < 85 ? 'Se recomienda seguimiento y generar plan de acción.' : 'Disponibilidad dentro de objetivo, sin acciones urgentes pendientes.'

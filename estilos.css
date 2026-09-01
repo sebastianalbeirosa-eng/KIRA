@@ -764,8 +764,7 @@ body {
   /* Página POR DEFECTO del documento: A4 vertical, para imprimirVista().
      Esta es la única @page SIN nombre del archivo — se aplica a todo
      lo que no tenga asignada explícitamente la página "kiraAsakai"
-     (ver el bloque de arriba). No agregar "landscape" acá: eso
-     volvería a mezclar la orientación de ambos modos de impresión. */
+     (ver el bloque de arriba). */
   @page {
     size: A4;
     margin: 10mm;
@@ -776,19 +775,26 @@ body {
      que tiene su propio encabezado dentro del reporte). */
   .print-only {
     display: block !important;
-    margin-bottom: 4mm;
-    padding: 2mm 3mm;
-    border: 1px solid #94a3b8;
+    margin-bottom: 6mm;
+    padding: 4mm 5mm;
+    border: 2px solid #475569;
     border-radius: 4px;
-    font-size: 9pt;
-    color: #172033;
+    background: #f8fafc;
   }
 
   .print-only strong {
     text-transform: uppercase;
-    font-size: 7pt;
-    color: #64748b;
-    display: block;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #334155;
+    display: inline-block;
+    margin-right: 2mm;
+  }
+
+  .print-only span {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #0f172a;
   }
 
   /* Ocultar elementos de la interfaz que no deben salir en papel */
@@ -1037,4 +1043,29 @@ body {
     right: 14px;
     bottom: 14px;
   }
+}
+
+/* Ajustar filas de tabla de defectos para que ocupen toda la altura */
+#tablaMapaDefectos tr {
+  height: 1px; /* Truco para que todas las filas sean iguales */
+  border-bottom: 1px solid #e2e8f0; /* Línea gris clara entre filas */
+}
+
+#tablaMapaDefectos td {
+  vertical-align: middle;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: inherit; /* Heredar el borde del tr */
+}
+
+
+
+/* Aumentar tamaño de números en tabla de defectos */
+#tablaMapaDefectos .badge {
+  font-size: 11px !important;
+}
+
+/* Aumentar tamaño de números de minutos en tabla de máquinas */
+#tablaMapaMaquinas .badge {
+  font-size: 11px !important;
 }

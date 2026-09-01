@@ -42,7 +42,7 @@ export function setAnalisisModo(modo) {
 // Umbrales de criticidad para el semáforo del mapa de calor.
 export const UMBRAL_PARADA = { critico: 100, alto: 60, medio: 20 };
 export const UMBRAL_VACIO = { critico: 50, alto: 30, medio: 10 };
-export const UMBRAL_DEFECTO = { critico: 3, alto: 2, medio: 1 };
+export const UMBRAL_DEFECTO = { critico: 2.1, alto: 1.6, medio: 1.1 };
 
 /** Devuelve las paradas del turno actual, filtradas por la línea seleccionada en pantalla. */
 export function datosVista() {
@@ -371,12 +371,23 @@ export function calcularKpisPlanta(l) {
       const porMotivo = {};
       regs.forEach(x => {
         const clave = x.motivo || '(sin motivo)';
-        if (!porMotivo[clave]) porMotivo[clave] = { mins: 0, vacio: 0 };
+        if (!porMotivo[clave]) porMotivo[clave] = { mins: 0, vacio: 0, observaciones: [] };
         porMotivo[clave].mins += x.minutos;
         porMotivo[clave].vacio += x.vacio;
+        if (x.obs && x.obs.trim()) {
+          porMotivo[clave].observaciones.push(x.obs.trim());
+        }
       });
       Object.entries(porMotivo).forEach(([motivo, datos]) => {
-        filasMapaCalor.push({ equipo: eqConfig.nombre, lineaNombre: lineaConfig.nombre, mins: datos.mins, vacio: datos.vacio, motivo });
+        const obsTexto = datos.observaciones.length > 0 ? datos.observaciones.join(' | ') : '—';
+        filasMapaCalor.push({ 
+          equipo: eqConfig.nombre, 
+          lineaNombre: lineaConfig.nombre, 
+          mins: datos.mins, 
+          vacio: datos.vacio, 
+          motivo,
+          observaciones: obsTexto
+        });
       });
     });
   });
@@ -604,10 +615,10 @@ export function renderVistaPlanta() {
       <tr class="${nivelFinal.rowBg}">
         <td class="text-center font-black text-slate-500">${i + 1}</td>
         <td><b>${esc(f.equipo)}</b></td>
-        <td class="text-center">${esc(f.lineaNombre)}</td>
         <td class="text-center"><span class="badge ${nivelP.badge}">${f.mins} min</span></td>
         <td class="text-center"><span class="badge ${nivelV.badge}">${f.vacio} min</span></td>
-        <td>${esc(f.motivo)}</td>
+        <td style="padding-left: 1.5rem">${esc(f.motivo)}</td>
+        <td class="text-slate-600 text-xs">${esc(f.observaciones || '—')}</td>
         <td class="text-center"><span class="badge ${nivelFinal.badge}">${nivelFinal.label}</span></td>
       </tr>`;
   }).join('') : '<tr><td colspan="7" class="text-center text-slate-500 p-3 italic">No hay paradas registradas en este turno.</td></tr>';
@@ -618,23 +629,23 @@ export function renderVistaPlanta() {
       <tr class="${nivel.rowBg}">
         <td class="text-center font-black text-slate-500">${i + 1}</td>
         <td><b>${esc(x.nombre)}</b></td>
-        <td class="text-center">${esc(nombreLinea(x.linea))}</td>
         <td class="text-center"><span class="badge ${nivel.badge}">${x.porcentaje}%</span></td>
         <td>${esc(x.accion || '—')}</td>
         <td class="text-center"><span class="badge ${nivel.badge}">${nivel.label}</span></td>
       </tr>`;
-  }).join('') : '<tr><td colspan="6" class="text-center text-slate-500 p-3 italic">No hay defectos de calidad registrados en este turno.</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="text-center text-slate-500 p-3 italic">No hay defectos de calidad registrados en este turno.</td></tr>';
 
-  const causasScope = {};
-  paradasScope.forEach(x => { causasScope[x.motivo] = (causasScope[x.motivo] || 0) + x.minutos; });
-  const topMotivos = Object.entries(causasScope).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const paletaDots = ['bg-rose-600', 'bg-orange-500', 'bg-amber-400', 'bg-lime-400', 'bg-sky-400', 'bg-slate-400'];
-  document.getElementById('topMotivosParada').innerHTML = topMotivos.length ? topMotivos.map((x, i) => `
-    <div class="flex justify-between items-center text-xs">
-      <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${paletaDots[i % paletaDots.length]}"></span>${esc(x[0])}</span>
-      <b class="text-slate-700">${x[1]} min</b>
-    </div>
-  `).join('') : '<p class="text-slate-500 italic text-xs">Sin datos.</p>';
+  // Top motivos de parada - COMENTADO: tarjeta eliminada del HTML
+  // const causasScope = {};
+  // paradasScope.forEach(x => { causasScope[x.motivo] = (causasScope[x.motivo] || 0) + x.minutos; });
+  // const topMotivos = Object.entries(causasScope).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  // const paletaDots = ['bg-rose-600', 'bg-orange-500', 'bg-amber-400', 'bg-lime-400', 'bg-sky-400', 'bg-slate-400'];
+  // document.getElementById('topMotivosParada').innerHTML = topMotivos.length ? topMotivos.map((x, i) => `
+  //   <div class="flex justify-between items-center text-xs">
+  //     <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${paletaDots[i % paletaDots.length]}"></span>${esc(x[0])}</span>
+  //     <b class="text-slate-700">${x[1]} min</b>
+  //   </div>
+  // `).join('') : '<p class="text-slate-500 italic text-xs">Sin datos.</p>';
 
   const ultimas = [...paradasScope].sort((a, b) => (b.hora || '').localeCompare(a.hora || '')).slice(0, 6);
 
@@ -679,6 +690,618 @@ export function renderVistaPlanta() {
 
   document.getElementById('vpNotaTurno').value = s.notaTurno || '';
   document.getElementById('vpSupervisorNombre').textContent = s.supervisor || 'No asignado';
+
+  // Renderizar gráficos de calidad
+  renderizarGraficosCalidad(l, lineasIter, s);
+  
+  // Renderizar gráfico de evolución de defectos
+  renderizarGraficoEvolucionDefectos(l, defectosScope, s);
+}
+
+/**
+ * Renderiza los gráficos de evolución de calidad global y parcial.
+ * Se llama desde renderVistaPlanta() para mostrar la evolución hora a hora.
+ */
+function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s) {
+  try {
+    // Obtener los datos de calidad de todas las líneas activas
+    const lineasConDatos = lineasIter
+      .map(lc => ({ 
+        linea: lc, 
+        objetivos: s.objetivos?.porLinea?.[lc.id] 
+      }))
+      .filter(x => x.objetivos && Array.isArray(x.objetivos.lecturasCalidad) && x.objetivos.lecturasCalidad.length > 0);
+
+    // Si la línea seleccionada es TODAS, agregar datos de todas las líneas
+    // Si no, mostrar solo la línea seleccionada
+    let lineasAMostrar = lineasConDatos;
+    
+    if (lineaSeleccionada !== 'TODAS') {
+      lineasAMostrar = lineasConDatos.filter(x => x.linea.id === lineaSeleccionada);
+    }
+
+    // Si no hay datos, limpiar los canvas y retornar
+    if (lineasAMostrar.length === 0) {
+      ['chartCalidadGlobal', 'chartCalidadParcial'].forEach(canvasId => {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        
+        const chartKey = canvasId + 'Chart';
+        if (window[chartKey]) {
+          window[chartKey].destroy();
+          window[chartKey] = null;
+        }
+        
+        // Limpiar canvas
+        canvas.style.display = 'none';
+        setTimeout(() => { canvas.style.display = 'block'; }, 10);
+      });
+      return;
+    }
+
+    // Preparar datos para gráfico global
+    renderizarGraficoCalidad(
+      'chartCalidadGlobal',
+      'global',
+      lineasAMostrar,
+      s
+    );
+
+    // Preparar datos para gráfico parcial
+    renderizarGraficoCalidad(
+      'chartCalidadParcial',
+      'parcial',
+      lineasAMostrar,
+      s
+    );
+  } catch (error) {
+    console.error('Error al renderizar gráficos de calidad:', error);
+  }
+}
+
+/**
+ * Renderiza un gráfico específico de calidad (global o parcial).
+ * Los segmentos cambian de color dinámicamente: verde cuando están sobre el objetivo, rojo cuando están debajo.
+ * Se interpolan puntos adicionales donde la línea cruza el objetivo para un cambio de color preciso.
+ */
+function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
+  try {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    // Desactivar globalmente el plugin datalabels si existe
+    if (window.Chart && window.Chart.defaults && window.Chart.defaults.set) {
+      window.Chart.defaults.set('plugins.datalabels', {
+        display: false
+      });
+    }
+
+    // Destruir gráfico anterior si existe
+    const chartKey = canvasId + 'Chart';
+    if (window[chartKey]) {
+      window[chartKey].destroy();
+      window[chartKey] = null;
+    }
+
+    // Extraer datos de todas las líneas y calcular el máximo y mínimo valor medido
+    const datasets = [];
+    let maxValorMedido = 0;
+    let minValorMedido = 100;
+    let horasOriginales = [];
+    let indicesOriginales = []; // Guardar los índices de los puntos originales
+    
+    lineasConDatos.forEach((item, idx) => {
+      const { linea, objetivos } = item;
+      const lecturas = objetivos?.lecturasCalidad || [];
+      const objetivo = objetivos?.calidad || 0;
+
+      if (!Array.isArray(lecturas) || lecturas.length === 0) return;
+
+      // Extraer horas y valores de calidad originales
+      const valoresOriginales = lecturas.map(l => {
+        if (tipoCalidad === 'global') {
+          return l?.global !== null && l?.global !== undefined ? l.global : null;
+        } else {
+          return l?.parcial !== null && l?.parcial !== undefined ? l.parcial : null;
+        }
+      });
+
+      if (idx === 0) {
+        horasOriginales = lecturas.map(l => l?.hora || '');
+        console.log(`[${tipoCalidad}] Lecturas:`, lecturas);
+        console.log(`[${tipoCalidad}] Horas:`, horasOriginales);
+        console.log(`[${tipoCalidad}] Valores originales:`, valoresOriginales);
+      }
+
+      // Interpolar puntos adicionales donde la línea cruza el objetivo
+      const valoresInterpolados = [];
+      const horasInterpoladas = [];
+      const indicesOriginalesTemp = [];
+      
+      for (let i = 0; i < valoresOriginales.length; i++) {
+        const valorActual = valoresOriginales[i];
+        valoresInterpolados.push(valorActual);
+        horasInterpoladas.push(horasOriginales[i]);
+        indicesOriginalesTemp.push(valoresInterpolados.length - 1); // Marcar este índice como original
+        
+        // Si hay un siguiente punto, verificar si hay cruce del objetivo
+        if (i < valoresOriginales.length - 1) {
+          const valorSiguiente = valoresOriginales[i + 1];
+          
+          if (valorActual !== null && valorSiguiente !== null) {
+            // Detectar cruce del objetivo
+            const cruzaObjetivo = (valorActual < objetivo && valorSiguiente >= objetivo) || 
+                                  (valorActual >= objetivo && valorSiguiente < objetivo);
+            
+            if (cruzaObjetivo) {
+              // Calcular el punto exacto de cruce mediante interpolación lineal
+              const t = (objetivo - valorActual) / (valorSiguiente - valorActual);
+              
+              // Insertar un punto en el cruce (valor = objetivo)
+              valoresInterpolados.push(objetivo);
+              horasInterpoladas.push(null); // null para el punto interpolado
+            }
+          }
+        }
+      }
+
+      if (idx === 0) {
+        indicesOriginales = indicesOriginalesTemp;
+      }
+
+      // Calcular el máximo y mínimo valor medido
+      const valoresValidos = valoresInterpolados.filter(v => v !== null);
+      if (valoresValidos.length > 0) {
+        const maxLocal = Math.max(...valoresValidos);
+        const minLocal = Math.min(...valoresValidos);
+        maxValorMedido = Math.max(maxValorMedido, maxLocal);
+        minValorMedido = Math.min(minValorMedido, minLocal);
+      }
+
+      // Configuración del dataset con colores dinámicos por segmento
+      datasets.push({
+        label: linea?.nombre || `Línea ${idx + 1}`,
+        data: valoresInterpolados,
+        borderColor: 'rgb(52, 211, 153)', // Color por defecto (verde)
+        backgroundColor: 'rgb(52, 211, 153)',
+        borderWidth: 3,
+        fill: false,
+        tension: 0, // Sin curvatura para que los colores coincidan exactamente
+        pointRadius: function(context) {
+          // Ocultar puntos interpolados, mostrar solo los originales
+          const indice = context.dataIndex;
+          return indicesOriginales.includes(indice) ? 5 : 0;
+        },
+        pointBackgroundColor: function(context) {
+          const valor = context.parsed.y;
+          if (valor === null || valor === undefined) return 'rgb(203, 213, 225)';
+          return valor >= objetivo ? 'rgb(52, 211, 153)' : 'rgb(253, 164, 175)';
+        },
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointHoverRadius: function(context) {
+          const indice = context.dataIndex;
+          return indicesOriginales.includes(indice) ? 7 : 0;
+        },
+        pointHoverBackgroundColor: function(context) {
+          const indice = context.dataIndex;
+          if (!indicesOriginales.includes(indice)) return 'transparent';
+          const valor = context.parsed.y;
+          if (valor === null || valor === undefined) return 'rgb(203, 213, 225)';
+          return valor >= objetivos?.calidad ? 'rgb(52, 211, 153)' : 'rgb(253, 164, 175)';
+        },
+        datalabels: {
+          display: false // Desactivar completamente las etiquetas de datos en los puntos
+        },
+        // Esta es la clave: segment permite colorear cada segmento de línea individualmente
+        segment: {
+          borderColor: function(context) {
+            const valor0 = context.p0.parsed.y;
+            const valor1 = context.p1.parsed.y;
+            
+            if (valor0 === null || valor1 === null) return 'rgb(203, 213, 225)';
+            
+            // Ahora que tenemos puntos interpolados en los cruces, 
+            // cada segmento está completamente de un lado del objetivo
+            const promedioSegmento = (valor0 + valor1) / 2;
+            return promedioSegmento >= objetivo ? 'rgb(52, 211, 153)' : 'rgb(253, 164, 175)';
+          }
+        }
+      });
+    });
+
+    if (datasets.length === 0) return;
+
+    // Generar etiquetas para el eje X (solo mostrar horas originales)
+    const primeraLinea = lineasConDatos[0]?.objetivos?.lecturasCalidad || [];
+    const etiquetasX = datasets[0].data.map((_, i) => {
+      // Solo mostrar etiqueta si es un punto original
+      if (indicesOriginales.includes(i)) {
+        const indiceOriginal = indicesOriginales.indexOf(i);
+        return primeraLinea[indiceOriginal]?.hora || '';
+      }
+      return ''; // Etiqueta vacía para puntos interpolados
+    });
+
+    // Calcular rango dinámico del eje Y con margen del 15% hacia arriba y hacia abajo
+    const margenMin = minValorMedido * 0.15;
+    const margenMax = maxValorMedido * 0.15;
+    
+    let yMin = Math.max(0, Math.floor(minValorMedido - margenMin));
+    let yMax = Math.min(100, Math.ceil(maxValorMedido + margenMax));
+    
+    // Si no hay datos válidos, usar rango por defecto
+    if (minValorMedido === 100 || maxValorMedido === 0) {
+      yMin = 0;
+      yMax = 100;
+    }
+
+    // Obtener objetivos para la línea de referencia
+    const objetivosLineas = lineasConDatos.map(item => item.objetivos?.calidad || 0);
+
+    // Crear gráfico
+    window[chartKey] = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: etiquetasX,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          intersect: false,
+          mode: 'index'
+        },
+        plugins: {
+          datalabels: {
+            display: false // Desactivar etiquetas de datos en todos los puntos
+          },
+          tooltip: {
+            enabled: true,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            borderColor: '#475569',
+            borderWidth: 1,
+            padding: 10,
+            displayColors: true,
+            filter: function(tooltipItem) {
+              // Solo mostrar tooltip en puntos originales (no interpolados)
+              return indicesOriginales.includes(tooltipItem.dataIndex);
+            },
+            callbacks: {
+              label: function(context) {
+                const valor = context.parsed.y;
+                const objetivo = objetivosLineas[context.datasetIndex] || 0;
+                const estado = valor >= objetivo ? '✓ Sobre objetivo' : '✗ Bajo objetivo';
+                return `${context.dataset.label}: ${valor.toFixed(2)}% ${estado}`;
+              }
+            }
+          },
+          legend: {
+            display: false // Ocultar la leyenda completamente
+          }
+        },
+        scales: {
+          y: {
+            min: yMin,
+            max: yMax,
+            ticks: {
+              callback: (value) => value + '%',
+              font: { size: 11 }
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.1)'
+            }
+          },
+          x: {
+            ticks: {
+              font: { size: 11 },
+              autoSkip: false, // No saltar etiquetas automáticamente
+              maxRotation: 0,
+              minRotation: 0
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.1)'
+            }
+          }
+        }
+      },
+      plugins: [{
+        id: 'ocultarValoresInterpolados',
+        afterDatasetsDraw(chart) {
+          // Este hook se ejecuta después de dibujar los datasets pero antes de otros elementos
+          // Aquí podemos interceptar solo los valores sobre los puntos
+          const ctx = chart.ctx;
+          
+          // Guardamos el método original fillText
+          const originalFillText = ctx.fillText;
+          const meta = chart.getDatasetMeta(0);
+          
+          // Crear un array con las coordenadas Y de los puntos interpolados
+          const coordenadasInterpoladas = [];
+          meta.data.forEach((punto, idx) => {
+            if (!indicesOriginales.includes(idx)) {
+              coordenadasInterpoladas.push({
+                x: punto.x,
+                y: punto.y,
+                rango: 20 // Rango de píxeles alrededor del punto
+              });
+            }
+          });
+          
+          // Sobrescribir fillText temporalmente
+          ctx.fillText = function(text, x, y, maxWidth) {
+            // Verificar si el texto es un número y está cerca de un punto interpolado
+            const esNumero = /^\d+(\.\d+)?$/.test(String(text).trim());
+            const estaCercaDeInterpolado = coordenadasInterpoladas.some(coord => 
+              Math.abs(coord.x - x) < coord.rango && Math.abs(coord.y - y) < coord.rango
+            );
+            
+            // Solo dibujar si NO es un número cerca de un punto interpolado
+            if (!esNumero || !estaCercaDeInterpolado) {
+              originalFillText.call(this, text, x, y, maxWidth);
+            }
+          };
+        },
+        afterDraw(chart) {
+          // Restaurar el método original después de terminar el dibujo completo
+          const ctx = chart.ctx;
+          ctx.fillText = ctx.fillText.originalMethod || ctx.fillText;
+        }
+      }, {
+        id: 'lineaObjetivo',
+        afterDatasetsDraw(chart) {
+          const ctx = chart.ctx;
+          const yScale = chart.scales.y;
+          const xScale = chart.scales.x;
+          
+          if (!yScale || !xScale) return;
+
+          // Dibujar líneas de objetivo para cada línea de datos
+          objetivosLineas.forEach((objetivo, idx) => {
+            const yPixel = yScale.getPixelForValue(objetivo);
+            const xStart = xScale.left;
+            const xEnd = xScale.right;
+
+            ctx.save();
+            ctx.strokeStyle = 'rgb(165, 230, 255)'; // Celeste pastel
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(xStart, yPixel);
+            ctx.lineTo(xEnd, yPixel);
+            ctx.stroke();
+            ctx.restore();
+
+            // Etiqueta del objetivo
+            ctx.fillStyle = 'rgb(100, 116, 139)';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`Objetivo: ${objetivo}%`, xEnd - 5, yPixel - 5);
+          });
+        }
+      }]
+    });
+  } catch (error) {
+    console.error(`Error al renderizar gráfico ${canvasId}:`, error);
+  }
+}
+
+/**
+ * Renderiza el gráfico de evolución de los 4 principales defectos hora a hora.
+ */
+function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
+  try {
+    console.log('=== Renderizando gráfico de defectos ===');
+    console.log('Línea seleccionada:', lineaSeleccionada);
+    console.log('Defectos recibidos:', defectos);
+    console.log('Cantidad de defectos:', defectos?.length);
+    
+    const canvas = document.getElementById('chartEvolucionDefectos');
+    console.log('Canvas encontrado:', canvas);
+    if (!canvas) return;
+
+    // Destruir gráfico anterior si existe
+    if (window.chartEvolucionDefectosChart) {
+      window.chartEvolucionDefectosChart.destroy();
+      window.chartEvolucionDefectosChart = null;
+    }
+
+    // Obtener los 4 principales defectos
+    const top4Defectos = defectos
+      .sort((a, b) => b.porcentaje - a.porcentaje)
+      .slice(0, 4);
+
+    console.log('Top 4 defectos:', top4Defectos);
+
+    if (top4Defectos.length === 0) {
+      console.log('No hay defectos para mostrar');
+      return;
+    }
+
+    // Obtener las lecturas de defectos históricas
+    // Si es TODAS, usar la primera línea activa que tenga datos
+    let lecturasDefectos = [];
+    let lineaUsada = null;
+    
+    if (lineaSeleccionada === 'TODAS') {
+      // Buscar en todas las líneas hasta encontrar una con lecturas
+      const lineas = s.lineas || [];
+      for (const linea of lineas) {
+        const lecturasLinea = s.objetivos?.porLinea?.[linea.id]?.lecturasDefectos || [];
+        if (lecturasLinea.length > 0) {
+          lecturasDefectos = lecturasLinea;
+          lineaUsada = linea.id;
+          console.log('Usando lecturas de defectos de línea:', linea.nombre);
+          break;
+        }
+      }
+    } else {
+      lecturasDefectos = s.objetivos?.porLinea?.[lineaSeleccionada]?.lecturasDefectos || [];
+      lineaUsada = lineaSeleccionada;
+    }
+    
+    console.log('Lecturas de defectos encontradas:', lecturasDefectos);
+    console.log('Cantidad de snapshots:', lecturasDefectos.length);
+
+    if (lecturasDefectos.length === 0) {
+      console.log('No hay lecturas de defectos históricas disponibles');
+      
+      // Mostrar mensaje informativo en el canvas
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'center';
+      ctx.fillText('Sin datos históricos de defectos', canvas.width / 2, canvas.height / 2 - 10);
+      ctx.font = '12px sans-serif';
+      ctx.fillText('Usa "Indicadores y objetivos" para cargar snapshots', canvas.width / 2, canvas.height / 2 + 10);
+      return;
+    }
+
+    // Extraer las horas de los snapshots
+    const horas = lecturasDefectos.map(l => l.hora);
+
+    // Colores pasteles para cada defecto: Azul, Verde, Naranja, Rojo
+    const colores = [
+      { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.15)' },    // Azul pastel
+      { border: 'rgb(74, 222, 128)', bg: 'rgba(74, 222, 128, 0.15)' },    // Verde pastel
+      { border: 'rgb(251, 146, 60)', bg: 'rgba(251, 146, 60, 0.15)' },    // Naranja pastel
+      { border: 'rgb(248, 113, 113)', bg: 'rgba(248, 113, 113, 0.15)' }   // Rojo pastel
+    ];
+
+    // Crear datasets para cada uno de los top 4 defectos
+    const datasets = top4Defectos.map((defecto, idx) => {
+      // Buscar el historial de este defecto en cada snapshot
+      const datos = lecturasDefectos.map(snapshot => {
+        const defectoEnSnapshot = snapshot.defectos.find(d => d.nombre === defecto.nombre);
+        return defectoEnSnapshot ? defectoEnSnapshot.porcentaje : null;
+      });
+
+      return {
+        label: defecto.nombre,
+        data: datos,
+        borderColor: colores[idx].border,
+        backgroundColor: colores[idx].bg,
+        borderWidth: 2,
+        fill: false,
+        tension: 0, // Líneas rectas sin curvas
+        pointRadius: 6, // Puntos más grandes
+        pointBackgroundColor: colores[idx].border,
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointHoverRadius: 8, // Hover más grande también
+        spanGaps: true // Conectar puntos aunque haya nulls en medio
+      };
+    });
+
+    // Obtener el objetivo de defectos
+    const objetivoDefectos = s.objetivos?.porLinea?.[lineaUsada]?.defectosMax || 8;
+    console.log('Objetivo de defectos:', objetivoDefectos);
+
+    // Crear gráfico
+    window.chartEvolucionDefectosChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: horas,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          intersect: false,
+          mode: 'index'
+        },
+        plugins: {
+          datalabels: {
+            display: false
+          },
+          tooltip: {
+            enabled: true,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            borderColor: '#475569',
+            borderWidth: 1,
+            padding: 10,
+            displayColors: true,
+            callbacks: {
+              label: function(context) {
+                return `${context.dataset.label}: ${context.parsed.y.toFixed(2)}%`;
+              }
+            }
+          },
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              font: { size: 10 },
+              padding: 8,
+              usePointStyle: true
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: (value) => value + '%',
+              font: { size: 11 }
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.1)'
+            }
+          },
+          x: {
+            ticks: {
+              font: { size: 11 },
+              maxRotation: 0,
+              minRotation: 0
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.1)'
+            }
+          }
+        }
+      },
+      plugins: [{
+        id: 'lineaObjetivoDefectos',
+        afterDatasetsDraw(chart) {
+          const ctx = chart.ctx;
+          const yScale = chart.scales.y;
+          const xScale = chart.scales.x;
+          
+          if (!yScale || !xScale) return;
+
+          // Dibujar línea de objetivo
+          const yPixel = yScale.getPixelForValue(objetivoDefectos);
+          const xStart = xScale.left;
+          const xEnd = xScale.right;
+
+          ctx.save();
+          ctx.strokeStyle = 'rgb(148, 163, 184)'; // Gris
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.moveTo(xStart, yPixel);
+          ctx.lineTo(xEnd, yPixel);
+          ctx.stroke();
+          ctx.restore();
+
+          // Etiqueta del objetivo
+          ctx.fillStyle = 'rgb(100, 116, 139)'; // Gris oscuro
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(`Objetivo: ${objetivoDefectos}%`, xEnd - 5, yPixel - 5);
+        }
+      }]
+    });
+  } catch (error) {
+    console.error('Error al renderizar gráfico de evolución de defectos:', error);
+  }
 }
 
 // ==========================================================

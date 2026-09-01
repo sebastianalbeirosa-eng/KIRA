@@ -203,12 +203,16 @@ export function asegurarObjetivosSesion(s) {
       s.objetivos.porLinea[l.id] = {
         calidad: 90, produccion: 0, vacioMax: 30,
         rendimientoObj: 0, realCalidad: 0, realProd: 0,
-        quemadoObj: 0 // Objetivo de m² quemados por línea, común a los 3 turnos
+        quemadoObj: 0, // Objetivo de m² quemados por línea, común a los 3 turnos
+        lecturasCalidad: Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }))
       };
     } else {
       const o = s.objetivos.porLinea[l.id];
       if (typeof o.rendimientoObj !== 'number') o.rendimientoObj = 0;
       if (typeof o.quemadoObj !== 'number') o.quemadoObj = 0;
+      if (!Array.isArray(o.lecturasCalidad)) {
+        o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
+      }
     }
   });
 }

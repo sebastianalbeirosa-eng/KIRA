@@ -649,13 +649,25 @@ function renderResumenImpresion() {
   const s = sesion();
   const lineaId = valor('lineaVista') || 'TODAS';
   const nombreArea = lineaId === 'TODAS' ? 'Todas las líneas' : nombreLinea(lineaId);
+  
+  // Obtener producto y formato de la línea seleccionada
+  let producto = '';
+  let formato = '';
+  if (lineaId !== 'TODAS' && s.productoPorLinea && s.productoPorLinea[lineaId]) {
+    producto = s.productoPorLinea[lineaId].producto || 'No especificado';
+    formato = s.productoPorLinea[lineaId].formato || 'No especificado';
+  }
 
   contenedor.innerHTML = `
-    <div style="display:flex; gap:8mm; flex-wrap:wrap;">
-      <div><strong>Fecha</strong>${esc(fmtFecha(valor('fecha')))}</div>
-      <div><strong>Turno</strong>${esc(valor('turno'))}</div>
-      <div><strong>Supervisor</strong>${esc(s.supervisor || 'No asignado')}</div>
-      <div><strong>Área monitoreada</strong>${esc(nombreArea)}</div>
+    <div style="display:flex; gap:8mm; flex-wrap:wrap; align-items:baseline;">
+      <div><strong>Fecha:</strong> <span>${esc(fmtFecha(valor('fecha')))}</span></div>
+      <div><strong>Turno:</strong> <span>${esc(valor('turno'))}</span></div>
+      <div><strong>Supervisor:</strong> <span>${esc(s.supervisor || 'No asignado')}</span></div>
+      <div><strong>Área:</strong> <span>${esc(nombreArea)}</span></div>
+      ${lineaId !== 'TODAS' ? `
+        <div><strong>Producto:</strong> <span>${esc(producto)}</span></div>
+        <div><strong>Formato:</strong> <span>${esc(formato)}</span></div>
+      ` : ''}
     </div>
   `;
 }

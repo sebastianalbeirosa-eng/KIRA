@@ -1069,3 +1069,200 @@ body {
 #tablaMapaMaquinas .badge {
   font-size: 11px !important;
 }
+
+
+/* ============================================ */
+/* PANTALLA DE BLOQUEO DE SESIÓN */
+/* ============================================ */
+
+.pantalla-bloqueo {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bloqueo-contenido {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  padding: 3rem 2.5rem;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.bloqueo-icono {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+}
+
+.bloqueo-icono svg {
+  width: 40px;
+  height: 40px;
+  color: white;
+}
+
+.bloqueo-titulo {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.5rem;
+}
+
+.bloqueo-usuario {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #3b82f6;
+  margin-bottom: 0.25rem;
+}
+
+.bloqueo-mensaje {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 2rem;
+}
+
+.bloqueo-form {
+  width: 100%;
+}
+
+.bloqueo-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.bloqueo-input-icon {
+  position: absolute;
+  left: 0.875rem;
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.bloqueo-input {
+  width: 100%;
+  padding: 0.875rem 3rem 0.875rem 2.75rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  color: #0f172a;
+  background: white;
+  transition: all 0.2s;
+}
+
+.bloqueo-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.bloqueo-toggle-password {
+  position: absolute;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.bloqueo-eye-icon {
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
+  transition: color 0.2s;
+}
+
+.bloqueo-toggle-password:hover .bloqueo-eye-icon {
+  color: #64748b;
+}
+
+.bloqueo-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.bloqueo-btn {
+  width: 100%;
+  padding: 0.9375rem 1.5rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 0.75rem;
+}
+
+.bloqueo-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.4);
+}
+
+.bloqueo-btn:active {
+  transform: translateY(0);
+}
+
+.bloqueo-btn-secundario {
+  width: 100%;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bloqueo-btn-secundario:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.bloqueo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.bloqueo-footer-icon {
+  width: 14px;
+  height: 14px;
+  color: #94a3b8;
+}
+
+.bloqueo-tiempo {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}

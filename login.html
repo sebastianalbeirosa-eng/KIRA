@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIRA | Iniciar sesión</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+  <div class="login-container">
+    
+    <!-- Panel izquierdo con branding -->
+    <div class="left-panel">
+      <div class="brand-section">
+        <div class="flex items-center gap-4">
+          <div class="brand-mark">K</div>
+          <div>
+            <div class="text-7xl font-black tracking-wide text-white">KIRA</div>
+            <div class="text-[10px] uppercase tracking-[.16em] text-white-300">Industrial Software Platform</div>
+          </div>
+        </div>
+        <div class="brand-divider"></div>
+      </div>
+
+      <div class="features-section">
+        <h2 class="features-title">
+          Transformamos datos<br>
+          de producción en <span class="text-highlight">decisiones</span><br>
+          que generan <span class="text-highlight">resultados</span>
+        </h2>
+
+        <div class="feature-item">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="20" x2="4" y2="10"/>
+            <line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="20" y1="20" x2="20" y2="14"/>
+          </svg>
+          <div>
+            <h3 class="feature-title">Análisis en tiempo real</h3>
+            <p class="feature-desc">Monitorea tu producción al instante</p>
+          </div>
+        </div>
+
+        <div class="feature-item">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="5" y="5" width="14" height="16" rx="1"/>
+            <path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z"/>
+            <path d="M9 12h6M9 16h6"/>
+          </svg>
+          <div>
+            <h3 class="feature-title">Información confiable</h3>
+            <p class="feature-desc">Datos precisos para mejores decisiones</p>
+          </div>
+        </div>
+
+        <div class="feature-item">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <div>
+            <h3 class="feature-title">Mejora continua</h3>
+            <p class="feature-desc">Identifica oportunidades y optimiza procesos</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-section">
+        <p class="footer-text">KIRA v3.0   © 2026 DMBE Systems - Todos los derechos reservados</p>
+      </div>
+    </div>
+
+    <!-- Panel derecho con formulario -->
+    <div class="right-panel">
+      <div class="login-card">
+        
+        <!-- Ícono de usuario -->
+        <div class="user-icon-container">
+          <svg class="user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+
+        <h1 class="login-title">Iniciar sesión</h1>
+        <p class="login-subtitle">Ingresá tus credenciales para acceder a KIRA</p>
+
+        <form id="loginForm" class="login-form">
+          
+          <!-- Campo Usuario -->
+          <div class="form-group">
+            <label class="form-label">Usuario</label>
+            <div class="input-container">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              <input 
+                type="text" 
+                id="username" 
+                class="form-input" 
+                placeholder="Ingresá tu usuario"
+                required
+              >
+            </div>
+          </div>
+
+          <!-- Campo Contraseña -->
+          <div class="form-group">
+            <label class="form-label">Contraseña</label>
+            <div class="input-container">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <input 
+                type="password" 
+                id="password" 
+                class="form-input" 
+                placeholder="Ingresá tu contraseña"
+                required
+              >
+              <button type="button" class="toggle-password" id="togglePassword">
+                <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Recordarme y Olvidé contraseña -->
+          <div class="form-options">
+            <label class="checkbox-label">
+              <input type="checkbox" id="rememberMe" class="checkbox-input">
+              <span class="checkbox-text">Recordarme</span>
+            </label>
+            <a href="#" class="forgot-password">¿Olvidaste tu contraseña?</a>
+          </div>
+
+          <!-- Mensaje de error -->
+          <div id="errorMessage" class="error-message" style="display: none;"></div>
+
+          <!-- Botón Ingresar -->
+          <button type="submit" class="btn-submit">Ingresar</button>
+
+          <!-- Divisor -->
+          <div class="divider">
+            <span class="divider-text">O</span>
+          </div>
+
+          <!-- Botón cuenta corporativa -->
+          <button type="button" class="btn-corporate">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2"/>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+            Ingresar con cuenta corporativa
+          </button>
+
+          <!-- Conexión segura -->
+          <div class="secure-connection">
+            <svg class="secure-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <span class="secure-text">Conexión segura</span>
+          </div>
+
+        </form>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script src="src/nucleo/almacenamiento.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>

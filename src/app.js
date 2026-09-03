@@ -37,6 +37,104 @@ import { renderConstructor } from './modulos/constructorPlanta.js';
 import { determinarTurnoAutomatico } from './modulos/gestionTurno.js';
 
 // ==========================================================
+// GESTIÓN DE SESIÓN DE USUARIO
+// ==========================================================
+
+let tiempoBloqueo = null;
+let intervalTiempoBloqueo = null;
+
+window.cargarInfoUsuario = function() {
+  const sesion = sessionStorage.getItem('kiraSession') || localStorage.getItem('kiraSession');
+  
+  if (sesion) {
+    try {
+      const datos = JSON.parse(sesion);
+      document.getElementById('usuarioNombre').textContent = datos.nombre;
+      document.getElementById('usuarioRol').textContent = `Rol: ${datos.rol.charAt(0).toUpperCase() + datos.rol.slice(1)}`;
+    } catch (e) {
+      console.error('Error al cargar información del usuario:', e);
+    }
+  }
+}
+
+window.cerrarSesion = function() {
+  if (confirm('¿Estás seguro de que querés cerrar sesión?')) {
+    sessionStorage.removeItem('kiraSession');
+    localStorage.removeItem('kiraSession');
+    window.location.href = 'login.html';
+  }
+}
+
+window.bloquearSesion = function() {
+  const sesion = sessionStorage.getItem('kiraSession') || localStorage.getItem('kiraSession');
+  
+  if (!sesion) {
+    window.location.href = 'login.html';
+    return;
+  }
+  
+  try {
+    const datos = JSON.parse(sesion);
+    
+    // Guardar datos de bloqueo
+    tiempoBloqueo = Date.now();
+    sessionStorage.setItem('sesionBloqueada', JSON.stringify({
+      usuario: datos.usuario,
+      nombre: datos.nombre,
+      timestamp: tiempoBloqueo
+    }));
+    
+    // Mostrar pantalla de bloqueo
+    document.getElementById('pantallaBloqueo').style.display = 'flex';
+    document.getElementById('bloqueoUsuarioNombre').textContent = datos.nombre;
+    document.getElementById('passwordDesbloqueo').value = '';
+    document.getElementById('passwordDesbloqueo').focus();
+    
+    // Actualizar tiempo de bloqueo cada minuto
+    actualizarTiempoBloqueo();
+    intervalTiempoBloqueo = setInterval(actualizarTiempoBloqueo, 60000);
+    
+  } catch (e) {
+    console.error('Error al bloquear sesión:', e);
+  }
+}
+
+function actualizarTiempoBloqueo() {
+  if (!tiempoBloqueo) return;
+  
+  const ahora = Date.now();
+  const diff = ahora - tiempoBloqueo;
+  const minutos = Math.floor(diff / 60000);
+  
+  let texto = '';
+  if (minutos < 1) {
+    texto = 'Bloqueado hace unos momentos';
+  } else if (minutos === 1) {
+    texto = 'Bloqueado hace 1 minuto';
+  } else if (minutos < 60) {
+    texto = `Bloqueado hace ${minutos} minutos`;
+  } else {
+    const horas = Math.floor(minutos / 60);
+    const mins = minutos % 60;
+    texto = `Bloqueado hace ${horas}h ${mins}m`;
+  }
+  
+  document.getElementById('tiempoBloqueo').textContent = texto;
+}
+
+window.cerrarSesionDesdeBloqueo = function() {
+  if (confirm('¿Estás seguro de que querés cerrar sesión?')) {
+    if (intervalTiempoBloqueo) {
+      clearInterval(intervalTiempoBloqueo);
+    }
+    sessionStorage.removeItem('sesionBloqueada');
+    sessionStorage.removeItem('kiraSession');
+    localStorage.removeItem('kiraSession');
+    window.location.href = 'login.html';
+  }
+}
+
+// ==========================================================
 // IMPORTS DE EFECTO SECUNDARIO (SIN LLAVES)
 // ----------------------------------------------------------
 // Estos 6 módulos no exponen ninguna función que app.js necesite
@@ -164,6 +262,9 @@ export function refrescarSelectoresLineas() {
 // histórico, y dispara el primer render de la sesión activa.
 // ==========================================================
 window.addEventListener('load', () => {
+  // Cargar información del usuario desde la sesión
+  cargarInfoUsuario();
+  
   refrescarSelectoresLineas();
 
   document.getElementById('fecha').value = hoyLocal();

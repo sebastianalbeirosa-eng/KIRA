@@ -1,0 +1,65 @@
+========================================
+CREDENCIALES DE ACCESO A KIRA
+========================================
+
+Para iniciar sesión en KIRA, usá alguna de estas credenciales:
+
+---------------------
+ADMINISTRADOR
+---------------------
+Usuario:     admin
+Contraseña:  admin123
+Rol:         Administrador
+
+---------------------
+SUPERVISOR
+---------------------
+Usuario:     supervisor
+Contraseña:  super123
+Rol:         Supervisor
+
+---------------------
+OPERARIO
+---------------------
+Usuario:     operario
+Contraseña:  oper123
+Rol:         Operario
+
+========================================
+NOTA DE SEGURIDAD
+========================================
+
+Estas credenciales están almacenadas en el archivo login.js
+para propósitos de desarrollo y prueba.
+
+En un entorno de producción real, las credenciales deberían:
+- Estar almacenadas en un servidor backend seguro
+- Las contraseñas deben estar encriptadas con hash
+- Implementar autenticación JWT o similar
+- Tener políticas de contraseñas fuertes
+- Registro de intentos de acceso
+- Recuperación de contraseña por email
+
+========================================
+FLUJO DE AUTENTICACIÓN
+========================================
+
+1. Al abrir KIRA (index.html), automáticamente 
+   verifica si hay una sesión activa
+   
+2. Si NO hay sesión, redirige a login.html
+
+3. El usuario ingresa sus credenciales
+
+4. Si son válidas, se crea una sesión y redirige
+   a la aplicación principal (index.html)
+
+5. La sesión expira después de 24 horas
+
+6. El usuario puede marcar "Recordarme" para
+   mantener la sesión entre navegaciones
+
+7. Puede cerrar sesión desde el botón en el 
+   sidebar de la aplicación
+
+========================================

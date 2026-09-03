@@ -1161,8 +1161,49 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
       return;
     }
 
-    // Extraer las horas de los snapshots
-    const horas = lecturasDefectos.map(l => l.hora);
+    // Extraer las horas de los snapshots y ordenarlas cronológicamente
+    // considerando que el turno puede cruzar la medianoche
+    const lecturasCopia = [...lecturasDefectos];
+    
+    // Función para ordenar horas cronológicamente según el turno seleccionado
+    function ordenarHorasCronologicamente(lecturas) {
+      if (lecturas.length === 0) return lecturas;
+      
+      // Obtener el turno actual (Mañana, Tarde, Noche)
+      const turnoActual = valor('turno');
+      let horaInicioTurno = 6; // Por defecto Mañana
+      if (turnoActual === 'Tarde') {
+        horaInicioTurno = 14;
+      } else if (turnoActual === 'Noche') {
+        horaInicioTurno = 22;
+      }
+      const minutosInicioTurno = horaInicioTurno * 60;
+
+      // Convertir todas las horas a minutos desde medianoche
+      const lecturasConMinutos = lecturas.map(l => {
+        const [horas, minutos] = (l.hora || '00:00').split(':').map(Number);
+        return {
+          ...l,
+          minutosDelDia: (isNaN(horas) ? 0 : horas) * 60 + (isNaN(minutos) ? 0 : minutos)
+        };
+      });
+      
+      // Normalizar las horas: si una hora es menor que la hora de inicio del turno, 
+      // asumimos que es del período post-medianoche y le sumamos 24 horas (1440 minutos)
+      lecturasConMinutos.forEach(l => {
+        if (l.minutosDelDia < minutosInicioTurno) {
+          l.minutosNormalizados = l.minutosDelDia + 1440; // +24 horas
+        } else {
+          l.minutosNormalizados = l.minutosDelDia;
+        }
+      });
+      
+      // Ordenar por minutos normalizados
+      return lecturasConMinutos.sort((a, b) => a.minutosNormalizados - b.minutosNormalizados);
+    }
+    
+    const lecturasOrdenadas = ordenarHorasCronologicamente(lecturasCopia);
+    const horas = lecturasOrdenadas.map(l => l.hora);
 
     // Colores pasteles para cada defecto: Azul, Verde, Naranja, Rojo
     const colores = [
@@ -1174,8 +1215,8 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
 
     // Crear datasets para cada uno de los top 4 defectos
     const datasets = top4Defectos.map((defecto, idx) => {
-      // Buscar el historial de este defecto en cada snapshot
-      const datos = lecturasDefectos.map(snapshot => {
+      // Buscar el historial de este defecto en cada snapshot (ahora ordenados)
+      const datos = lecturasOrdenadas.map(snapshot => {
         const defectoEnSnapshot = snapshot.defectos.find(d => d.nombre === defecto.nombre);
         return defectoEnSnapshot ? defectoEnSnapshot.porcentaje : null;
       });
@@ -1227,10 +1268,40 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
             borderColor: '#475569',
             borderWidth: 1,
             padding: 10,
+            bodySpacing: 6,
             displayColors: true,
             callbacks: {
               label: function(context) {
-                return `${context.dataset.label}: ${context.parsed.y.toFixed(2)}%`;
+                const valorActual = context.parsed.y;
+                const datasetIndex = context.datasetIndex;
+                const dataIndex = context.dataIndex;
+                const dataset = context.chart.data.datasets[datasetIndex];
+                
+                let label = `${dataset.label}: ${valorActual.toFixed(2)}%`;
+                
+                // Calcular diferencia con la lectura anterior
+                if (dataIndex > 0) {
+                  // Buscar el valor anterior (puede ser null si no había dato)
+                  let valorAnterior = null;
+                  for (let i = dataIndex - 1; i >= 0; i--) {
+                    if (dataset.data[i] !== null) {
+                      valorAnterior = dataset.data[i];
+                      break;
+                    }
+                  }
+                  
+                  if (valorAnterior !== null) {
+                    const diferencia = valorActual - valorAnterior;
+                    const simbolo = diferencia > 0 ? '↑' : (diferencia < 0 ? '↓' : '→');
+                    const color = diferencia > 0 ? 'subió' : (diferencia < 0 ? 'bajó' : 'sin cambio');
+                    
+                    if (diferencia !== 0) {
+                      label += `  ${simbolo} ${Math.abs(diferencia).toFixed(2)}%`;
+                    }
+                  }
+                }
+                
+                return label;
               }
             }
           },
@@ -1246,9 +1317,27 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
         },
         scales: {
           y: {
-            beginAtZero: true,
+            beginAtZero: false,
+            suggestedMin: function(context) {
+              // Obtener el valor mínimo de todos los datasets
+              const allData = context.chart.data.datasets.flatMap(ds => ds.data.filter(v => v !== null));
+              if (allData.length === 0) return 0;
+              const minVal = Math.min(...allData);
+              // Aplicar margen del 2%
+              const margen = minVal * 0.02;
+              return Math.max(0, minVal - margen);
+            },
+            suggestedMax: function(context) {
+              // Obtener el valor máximo de todos los datasets y el objetivo
+              const allData = context.chart.data.datasets.flatMap(ds => ds.data.filter(v => v !== null));
+              if (allData.length === 0) return objetivoDefectos * 1.1;
+              const maxVal = Math.max(...allData, objetivoDefectos);
+              // Aplicar margen del 2%
+              const margen = maxVal * 0.02;
+              return maxVal + margen;
+            },
             ticks: {
-              callback: (value) => value + '%',
+              callback: (value) => value.toFixed(1) + '%',
               font: { size: 11 }
             },
             grid: {

@@ -40,8 +40,8 @@ export function setAnalisisModo(modo) {
 }
 
 // Umbrales de criticidad para el semáforo del mapa de calor.
-export const UMBRAL_PARADA = { critico: 100, alto: 60, medio: 20 };
-export const UMBRAL_VACIO = { critico: 50, alto: 30, medio: 10 };
+export const UMBRAL_PARADA = { critico: 40, alto: 30, medio: 20 };
+export const UMBRAL_VACIO = { critico: 40, alto: 30, medio: 20 };
 export const UMBRAL_DEFECTO = { critico: 2.1, alto: 1.6, medio: 1.1 };
 
 /** Devuelve las paradas del turno actual, filtradas por la línea seleccionada en pantalla. */
@@ -759,6 +759,8 @@ function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s) {
   }
 }
 
+
+
 /**
  * Renderiza un gráfico específico de calidad (global o parcial).
  * Los segmentos cambian de color dinámicamente: verde cuando están sobre el objetivo, rojo cuando están debajo.
@@ -792,7 +794,10 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
     
     lineasConDatos.forEach((item, idx) => {
       const { linea, objetivos } = item;
-      const lecturas = objetivos?.lecturasCalidad || [];
+      const lecturas = (objetivos?.lecturasCalidad || []).filter(lectura => {
+        const valorLectura = tipoCalidad === 'global' ? lectura?.global : lectura?.parcial;
+        return lectura?.hora && valorLectura !== null && valorLectura !== undefined;
+      });
       const objetivo = objetivos?.calidad || 0;
 
       if (!Array.isArray(lecturas) || lecturas.length === 0) return;
@@ -806,7 +811,7 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
         }
       });
 
-      if (idx === 0) {
+      if (datasets.length === 0) {
         horasOriginales = lecturas.map(l => l?.hora || '');
         console.log(`[${tipoCalidad}] Lecturas:`, lecturas);
         console.log(`[${tipoCalidad}] Horas:`, horasOriginales);
@@ -823,26 +828,6 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
         valoresInterpolados.push(valorActual);
         horasInterpoladas.push(horasOriginales[i]);
         indicesOriginalesTemp.push(valoresInterpolados.length - 1); // Marcar este índice como original
-        
-        // Si hay un siguiente punto, verificar si hay cruce del objetivo
-        if (i < valoresOriginales.length - 1) {
-          const valorSiguiente = valoresOriginales[i + 1];
-          
-          if (valorActual !== null && valorSiguiente !== null) {
-            // Detectar cruce del objetivo
-            const cruzaObjetivo = (valorActual < objetivo && valorSiguiente >= objetivo) || 
-                                  (valorActual >= objetivo && valorSiguiente < objetivo);
-            
-            if (cruzaObjetivo) {
-              // Calcular el punto exacto de cruce mediante interpolación lineal
-              const t = (objetivo - valorActual) / (valorSiguiente - valorActual);
-              
-              // Insertar un punto en el cruce (valor = objetivo)
-              valoresInterpolados.push(objetivo);
-              horasInterpoladas.push(null); // null para el punto interpolado
-            }
-          }
-        }
       }
 
       if (idx === 0) {
@@ -912,13 +897,12 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
 
     if (datasets.length === 0) return;
 
-    // Generar etiquetas para el eje X (solo mostrar horas originales)
-    const primeraLinea = lineasConDatos[0]?.objetivos?.lecturasCalidad || [];
+    // Generar etiquetas solo con las horas que tienen una lectura válida.
     const etiquetasX = datasets[0].data.map((_, i) => {
       // Solo mostrar etiqueta si es un punto original
       if (indicesOriginales.includes(i)) {
         const indiceOriginal = indicesOriginales.indexOf(i);
-        return primeraLinea[indiceOriginal]?.hora || '';
+        return horasOriginales[indiceOriginal] || '';
       }
       return ''; // Etiqueta vacía para puntos interpolados
     });
@@ -996,6 +980,8 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             }
           },
           x: {
+            type: 'category',
+            offset: false,
             ticks: {
               font: { size: 11 },
               autoSkip: false, // No saltar etiquetas automáticamente
@@ -1077,7 +1063,7 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
 
             // Etiqueta del objetivo
             ctx.fillStyle = 'rgb(100, 116, 139)';
-            ctx.font = 'bold 10px sans-serif';
+            ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'right';
             ctx.fillText(`Objetivo: ${objetivo}%`, xEnd - 5, yPixel - 5);
           });
@@ -1109,17 +1095,12 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
       window.chartEvolucionDefectosChart = null;
     }
 
-    // Obtener los 4 principales defectos
-    const top4Defectos = defectos
+    // Obtener los 4 principales defectos sin modificar el array original
+    const top4Defectos = [...(defectos || [])]
       .sort((a, b) => b.porcentaje - a.porcentaje)
       .slice(0, 4);
 
     console.log('Top 4 defectos:', top4Defectos);
-
-    if (top4Defectos.length === 0) {
-      console.log('No hay defectos para mostrar');
-      return;
-    }
 
     // Obtener las lecturas de defectos históricas
     // Si es TODAS, usar la primera línea activa que tenga datos
@@ -1205,38 +1186,95 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
     const lecturasOrdenadas = ordenarHorasCronologicamente(lecturasCopia);
     const horas = lecturasOrdenadas.map(l => l.hora);
 
-    // Colores pasteles para cada defecto: Azul, Verde, Naranja, Rojo
+    // Colores asignados por orden de entrada al Top 4 histórico.
     const colores = [
       { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.15)' },    // Azul pastel
       { border: 'rgb(74, 222, 128)', bg: 'rgba(74, 222, 128, 0.15)' },    // Verde pastel
       { border: 'rgb(251, 146, 60)', bg: 'rgba(251, 146, 60, 0.15)' },    // Naranja pastel
-      { border: 'rgb(248, 113, 113)', bg: 'rgba(248, 113, 113, 0.15)' }   // Rojo pastel
+      { border: 'rgb(248, 113, 113)', bg: 'rgba(248, 113, 113, 0.15)' },   // Rojo pastel
+      { border: 'rgb(168, 85, 247)', bg: 'rgba(168, 85, 247, 0.15)' },    // Violeta pastel
+      { border: 'rgb(14, 165, 233)', bg: 'rgba(14, 165, 233, 0.15)' },    // Celeste pastel
+      { border: 'rgb(234, 179, 8)', bg: 'rgba(234, 179, 8, 0.15)' },      // Amarillo pastel
+      { border: 'rgb(236, 72, 153)', bg: 'rgba(236, 72, 153, 0.15)' }     // Rosa pastel
     ];
 
-    // Crear datasets para cada uno de los top 4 defectos
-    const datasets = top4Defectos.map((defecto, idx) => {
-      // Buscar el historial de este defecto en cada snapshot (ahora ordenados)
-      const datos = lecturasOrdenadas.map(snapshot => {
-        const defectoEnSnapshot = snapshot.defectos.find(d => d.nombre === defecto.nombre);
-        return defectoEnSnapshot ? defectoEnSnapshot.porcentaje : null;
+    // Obtener todos los defectos que pertenecieron al Top 4 en alguna hora.
+    // Esto permite conservar el último punto del defecto que luego salió.
+    const top4PorHora = lecturasOrdenadas.map(snapshot => {
+      return [...(snapshot.defectos || [])]
+        .sort((a, b) => b.porcentaje - a.porcentaje)
+        .slice(0, 4);
+    });
+
+    const nombresDefectosHistoricos = [];
+    top4PorHora.forEach(top4DeEstaHora => {
+
+      top4DeEstaHora.forEach(defecto => {
+        if (!nombresDefectosHistoricos.includes(defecto.nombre)) {
+          nombresDefectosHistoricos.push(defecto.nombre);
+        }
+      });
+    });
+
+    // Ocultar por completo los defectos que llevan dos tomas fuera del Top 4.
+    // Si vuelven a entrar, vuelven a formar parte de la lista y se dibujan.
+    const nombresDefectosVisibles = nombresDefectosHistoricos.filter(nombreDefecto => {
+      let ultimaTomaEnTop4 = -1;
+      top4PorHora.forEach((top4DeEstaHora, indice) => {
+        if (top4DeEstaHora.some(defecto => defecto.nombre === nombreDefecto)) {
+          ultimaTomaEnTop4 = indice;
+        }
       });
 
+      return ultimaTomaEnTop4 >= top4PorHora.length - 2;
+    });
+
+    // Crear un dataset por cada defecto visible.
+    const datasets = nombresDefectosVisibles.map((nombreDefecto, idx) => {
+      let tomasFueraDelTop4 = 0;
+
+      const datos = top4PorHora.map(top4DeEstaHora => {
+        const defectoEnTop4 = top4DeEstaHora.find(d => d.nombre === nombreDefecto);
+
+        // Si vuelve a entrar, se reactiva y puede comenzar un nuevo tramo.
+        if (defectoEnTop4) {
+          tomasFueraDelTop4 = 0;
+          return defectoEnTop4.porcentaje;
+        }
+
+        // Tras dos tomas fuera del Top 4, no se dibuja nada más hasta que
+        // el defecto vuelva a entrar. Esto evita prolongar visualmente una
+        // serie antigua y conserva el último punto válido anterior a la salida.
+        tomasFueraDelTop4 += 1;
+        if (tomasFueraDelTop4 >= 2) return null;
+
+        return null;
+      });
+
+      const color = colores[idx % colores.length];
+
       return {
-        label: defecto.nombre,
+        label: nombreDefecto,
         data: datos,
-        borderColor: colores[idx].border,
-        backgroundColor: colores[idx].bg,
+        borderColor: color.border,
+        backgroundColor: color.bg,
         borderWidth: 2,
         fill: false,
         tension: 0, // Líneas rectas sin curvas
         pointRadius: 6, // Puntos más grandes
-        pointBackgroundColor: colores[idx].border,
+        pointBackgroundColor: color.border,
         pointBorderColor: '#fff',
         pointBorderWidth: 2,
         pointHoverRadius: 8, // Hover más grande también
-        spanGaps: true // Conectar puntos aunque haya nulls en medio
+        // No unir el punto anterior con el siguiente cuando sale del Top 4.
+        spanGaps: false
       };
     });
+
+    if (datasets.length === 0) {
+      console.log('No hay defectos históricos que hayan pertenecido al Top 4');
+      return;
+    }
 
     // Obtener el objetivo de defectos
     const objetivoDefectos = s.objetivos?.porLinea?.[lineaUsada]?.defectosMax || 8;

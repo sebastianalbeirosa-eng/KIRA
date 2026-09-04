@@ -121,9 +121,7 @@
           </button>
         </div>
         
-        <div class="uppercase font-bold text-slate-300 mb-2">Estado del sistema</div>
-        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>Registro local activo</div>
-        <div class="mt-2">KIRA v2.0 <br> © 2026 DMBE Systems</div>
+        <div class="mt-2">KIRA 3.0 &nbsp; © 2026 DMBE Systems</div>
       </div>
     </aside>
 
@@ -216,7 +214,7 @@
         </div>
       </div>
 
-      <div class="panel p-3">
+      <div id="panelEvolucionDefectos" class="panel p-3">
         <h2 class="font-black text-slate-700 uppercase text-sm mb-2 flex items-center justify-between">
           <span>Evolución hora a hora — Calidad Parcial</span>
           <span class="text-[10px] font-normal text-slate-400 normal-case">(Objetivo vs Real)</span>
@@ -261,7 +259,7 @@
           <span>Evolución hora a hora — Top 4 Defectos</span>
           <span class="text-[10px] font-normal text-slate-400 normal-case">(% de defectos por hora)</span>
         </h2>
-        <div class="h-64 relative">
+        <div id="contenedorEvolucionDefectos" class="h-64 relative">
           <canvas id="chartEvolucionDefectos"></canvas>
         </div>
       </div>
@@ -271,7 +269,7 @@
     <!-- Grid para poner Orden crítico y Últimas paradas lado a lado -->
     <div class="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-3">
       
-      <div class="panel p-3 overflow-auto">
+      <div id="panelOrdenCritico" class="panel p-3 overflow-auto">
         <h2 class="font-black text-slate-700 uppercase text-sm mb-2">
           Orden crítico — Mapa de calor de máquinas
         </h2>

@@ -6,7 +6,7 @@
 const USUARIOS = {
   'admin': { password: 'admin123', nombre: 'Administrador', rol: 'admin' },
   'supervisor': { password: 'super123', nombre: 'Supervisor', rol: 'supervisor' },
-  'operario': { password: 'oper123', nombre: 'Operario', rol: 'operario' }
+  'Marcelo': { password: 'Marce123', nombre: 'Marcelo Molina', rol: 'operario' }
 };
 
 // Toggle para mostrar/ocultar contraseña en desbloqueo

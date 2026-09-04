@@ -122,18 +122,6 @@ function actualizarTiempoBloqueo() {
   document.getElementById('tiempoBloqueo').textContent = texto;
 }
 
-window.cerrarSesionDesdeBloqueo = function() {
-  if (confirm('¿Estás seguro de que querés cerrar sesión?')) {
-    if (intervalTiempoBloqueo) {
-      clearInterval(intervalTiempoBloqueo);
-    }
-    sessionStorage.removeItem('sesionBloqueada');
-    sessionStorage.removeItem('kiraSession');
-    localStorage.removeItem('kiraSession');
-    window.location.href = 'login.html';
-  }
-}
-
 // ==========================================================
 // IMPORTS DE EFECTO SECUNDARIO (SIN LLAVES)
 // ----------------------------------------------------------

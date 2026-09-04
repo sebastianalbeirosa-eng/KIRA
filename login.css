@@ -63,7 +63,7 @@ body {
 
 .brand-mark { 
   width: clamp(58px, 7vw, 90px); 
-  height: clamp(70px, 10vh, 110px); 
+  height: clamp(110px, 10vh, 100px); 
   display: grid; 
   place-items: center; 
   background: #1378e5; 
@@ -75,7 +75,7 @@ body {
 }
 
 .brand-divider {
-  width: 70px;
+  width: 90px;
   height: 3px;
   background: #3b82f6;
   margin-top: clamp(0.75rem, 2vh, 1.5rem);

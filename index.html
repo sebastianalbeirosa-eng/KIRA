@@ -101,9 +101,9 @@
             </svg>
             <span class="text-slate-300 font-bold" id="usuarioNombre">Usuario</span>
           </div>
-          <div class="text-[10px] text-slate-500" id="usuarioRol">Rol: Cargando...</div>
+          <div class="text-[13px] text-slate-500" id="usuarioRol">Rol: Cargando...</div>
           
-          <button onclick="bloquearSesion()" class="mt-2 w-full text-left px-2 py-1 rounded text-[10px] text-slate-300 hover:bg-slate-700/50 transition-colors flex items-center gap-2">
+          <button onclick="bloquearSesion()" class="mt-2 w-full text-left px-2 py-1 rounded text-[13px] text-slate-300 hover:bg-slate-700/50 transition-colors flex items-center gap-2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
               <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -111,7 +111,7 @@
             Bloquear sesión
           </button>
           
-          <button onclick="cerrarSesion()" class="mt-1 w-full text-left px-2 py-1 rounded text-[10px] text-slate-300 hover:bg-slate-700/50 transition-colors flex items-center gap-2">
+          <button onclick="cerrarSesion()" class="mt-1 w-full text-left px-2 py-1 rounded text-[13px] text-slate-300 hover:bg-slate-700/50 transition-colors flex items-center gap-2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
               <polyline points="16 17 21 12 16 7"/>
@@ -121,7 +121,7 @@
           </button>
         </div>
         
-        <div class="mt-2">KIRA 3.0 &nbsp; © 2026 DMBE Systems</div>
+        <div class="mt-2 text-[12px] text-slate-400">KIRA 3.0 &nbsp; © 2026 DMBE Systems</div>
       </div>
     </aside>
 
@@ -571,7 +571,7 @@
       </h2>
 
       <p class="text-sm text-slate-500 mt-3">
-        Versión 2.0 · Desarrollado por <strong>DMBE Systems</strong>
+        Versión 3.0 · Desarrollado por <strong>DMBE Systems</strong>
       </p>
 
     </div>
@@ -776,7 +776,7 @@
 
       <div>
         <span class="font-bold text-slate-700">Versión</span><br>
-        2.0
+        3.0
       </div>
 
       <div>
@@ -1343,10 +1343,6 @@
         <div id="errorDesbloqueo" class="bloqueo-error" style="display: none;"></div>
         
         <button type="submit" class="bloqueo-btn">Desbloquear</button>
-        
-        <button type="button" onclick="cerrarSesionDesdeBloqueo()" class="bloqueo-btn-secundario">
-          Cerrar sesión
-        </button>
       </form>
       
       <div class="bloqueo-footer">

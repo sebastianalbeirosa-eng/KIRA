@@ -592,6 +592,20 @@ export function calcularKpisPlanta(l) {
   const calidadDesvioSigno = calidadDesvio > 0 ? '+' : '';
   const rendimientoPct = objetivoTotal > 0 ? (realTotal / objetivoTotal) * 100 : null;
 
+  // --- METROS vs OBJETIVO: cuántos m² faltan o sobran respecto del objetivo
+  // teórico acumulado a la hora de la última toma. Positivo = sobran, negativo
+  // = faltan. Se muestra con flecha y color en la tarjeta KPI (igual que calidad).
+  const m2Objetivo = Math.round(objetivoTotal);
+  const m2Real = Math.round(realTotal);
+  const m2Desvio = m2Real - m2Objetivo;   // + sobran, - faltan
+  const hayRend = rendimientoPct !== null;
+  const rendDesvioClase = m2Desvio >= 0 ? 'text-emerald-700' : 'text-rose-700';
+  const rendDireccion = m2Desvio > 0
+    ? { color: 'text-emerald-600', stroke: '#059669', svg: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>' }
+    : m2Desvio < 0
+      ? { color: 'text-rose-600', stroke: '#dc2626', svg: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>' }
+      : { color: 'text-slate-400', stroke: '#94a3b8', svg: '<path d="M5 12h14"/>' };
+
   // EVALUACIÓN DE SEMÁFORO (VALORES) PARA CADA TARJETA KPI
   const paradaValorColor = m.parada <= 20 ? 'text-emerald-700' : (m.parada <= 60 ? 'text-amber-600' : 'text-rose-700');
   const vacioValorColor = m.vacio <= 10 ? 'text-emerald-700' : (m.vacio <= 30 ? 'text-amber-600' : 'text-rose-700');
@@ -616,6 +630,7 @@ export function calcularKpisPlanta(l) {
     calidadReal, calidadParcial, calidadObjetivo, calidadDesvio, horaCalidad,
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
     rendimientoPct, rendimientoValorColor,
+    m2Objetivo, m2Real, m2Desvio, hayRend, rendDesvioClase, rendDireccion,
     paradaValorColor, vacioValorColor, eficienciaValorColor,
     egeTurno, egeValorColor,
     esModoDia, minutosPeriodo, sesionesDia
@@ -633,6 +648,7 @@ export function renderVistaPlanta() {
     calidadReal, calidadParcial, calidadDesvio, horaCalidad,
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
     rendimientoPct, rendimientoValorColor,
+    m2Objetivo, m2Real, m2Desvio, hayRend, rendDesvioClase, rendDireccion,
     paradaValorColor, vacioValorColor, eficienciaValorColor,
     egeTurno, egeValorColor,
     esModoDia, sesionesDia
@@ -710,7 +726,15 @@ export function renderVistaPlanta() {
       <div>
         <div class="text-[13px] uppercase font-black text-slate-500">Rendimiento</div>
         <div class="text-2xl font-black ${rendimientoValorColor} mt-1">${rendimientoPct === null ? 'N/D' : rendimientoPct.toFixed(1) + '%'}</div>
-        <div class="text-[11px] text-slate-400 mt-1">${rendimientoPct === null ? 'Configurar en Indicadores' : 'Objetivo: > 85%'}</div>
+        ${hayRend ? `
+        <div class="text-[12px] text-slate-500 mt-1 leading-snug">Objetivo: <b class="text-slate-700">${m2Objetivo.toLocaleString('es-AR')} m²</b></div>
+        <div class="text-[12px] text-slate-500 leading-snug">Real: <b class="text-slate-700">${m2Real.toLocaleString('es-AR')} m²</b></div>
+        <div class="text-[12px] ${rendDesvioClase} font-bold flex items-center gap-1 leading-snug">
+          ${m2Desvio > 0 ? 'Sobra:' : m2Desvio < 0 ? 'Falta:' : 'Dif.:'}
+          <svg viewBox="0 0 24 24" fill="none" stroke="${rendDireccion.stroke}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">${rendDireccion.svg}</svg>
+          ${Math.abs(m2Desvio).toLocaleString('es-AR')} m²
+        </div>` : `
+        <div class="text-[11px] text-slate-400 mt-1 leading-tight">Cargá tomas de m² en Indicadores</div>`}
       </div>
       <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     </div>

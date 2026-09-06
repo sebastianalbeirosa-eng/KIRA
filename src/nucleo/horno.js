@@ -202,7 +202,13 @@ export function proyectarProduccionTurno(tramos, turno) {
 
   for (let i = 0; i < normalizados.length; i++) {
     const actual = normalizados[i];
-    const desde = actual.minutoInicio;
+    // El PRIMER tramo (producto inicial) se considera vigente desde el minuto
+    // 0 del turno: el horno viene quemando desde el arranque del turno/día, sin
+    // importar la hora en que se anotó el evento inicial. Los cambios
+    // posteriores sí arrancan en su hora real. Esto evita que el objetivo se
+    // subestime (y el rendimiento supere 100%) cuando el evento inicial tiene
+    // una hora posterior al inicio del turno.
+    const desde = (i === 0) ? 0 : actual.minutoInicio;
     // El tramo dura hasta el inicio del próximo tramo, o hasta fin de turno.
     const hasta = (i + 1 < normalizados.length)
       ? normalizados[i + 1].minutoInicio

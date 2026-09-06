@@ -154,8 +154,9 @@
             <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700" onclick="guardarExcel()">Guardar turno / Excel</button>
           </div>
         </div>
-        <!-- Panel de control de sesión operativa (Restaurado y visible) -->
-        <div class="panel px-2 py-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+        <!-- Panel de control de sesión operativa. Los 5 selectores van SIEMPRE
+             en una sola línea (grid-cols-5 fijo), incluso en monitores chicos. -->
+        <div class="panel selectores-turno px-2 py-2 grid grid-cols-5 gap-2">
           <label class="text-[11px] uppercase font-black text-slate-500">Fecha operativa
             <input id="fecha" type="date" class="field mt-1" onchange="cambiarSesion()">
           </label>

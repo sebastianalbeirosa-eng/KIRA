@@ -157,6 +157,24 @@ body {
   outline-offset: 1px; 
 }
 
+/* Panel de los 5 selectores (fecha, turno, supervisor, área, período):
+   se mantienen en una sola línea también en monitores chicos, reduciendo
+   fuente y padding para que entren sin desbordar. */
+.selectores-turno label {
+  min-width: 0;                 /* permite que la columna se encoja */
+  font-size: 9px;
+  line-height: 1.1;
+}
+.selectores-turno .field {
+  padding: .35rem .4rem;
+  font-size: 12px;
+  min-width: 0;                 /* evita el ancho mínimo intrínseco de select/date */
+}
+@media (max-width: 900px) {
+  .selectores-turno .field { font-size: 11px; padding: .3rem .35rem; }
+  .selectores-turno label { font-size: 8px; }
+}
+
 .btn { 
   border-radius: 6px; 
   padding: .55rem .8rem; 

@@ -9,10 +9,87 @@
 */
 
 import { persistir } from '../nucleo/almacenamiento.js';
-import { abrir, cerrar } from '../nucleo/utilidades.js';
-import { sesion, lineasActivas, asegurarObjetivosSesion } from '../nucleo/estado.js';
+import { abrir, cerrar, esc } from '../nucleo/utilidades.js';
+import {
+  sesion, lineasActivas, asegurarObjetivosSesion,
+  formatosHornoGuardados, guardarFormatosHorno
+} from '../nucleo/estado.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import { renderTodo, renderVistaPlanta } from './vistaDePlanta.js';
+import {
+  listarFormatos, obtenerFormato, agregarFormato, fijarCatalogoFormatos,
+  m2PorHoraPorId, proyectarProduccionTurno, rendimientoEnToma, CICLO_MIN, CICLO_MAX
+} from '../nucleo/horno.js';
+
+// Al cargar el módulo, sincronizar el catálogo de formatos del horno con lo
+// que haya guardado el usuario (formatos personalizados persistidos).
+const formatosPersistidos = formatosHornoGuardados();
+if (formatosPersistidos) fijarCatalogoFormatos(formatosPersistidos);
+
+/** Opciones <option> de formatos para los selects de cada toma. */
+function opcionesFormato(seleccionado) {
+  return ['<option value="">Formato…</option>']
+    .concat(listarFormatos().map(f =>
+      `<option value="${f.id}" ${f.id === seleccionado ? 'selected' : ''}>${esc(f.nombre)}</option>`))
+    .join('');
+}
+
+/** Opciones <option> de ciclos (minutos) para los selects de cada toma. */
+function opcionesCiclo(seleccionado) {
+  const opts = ['<option value="">Ciclo…</option>'];
+  for (let c = CICLO_MIN; c <= CICLO_MAX; c++) {
+    opts.push(`<option value="${c}" ${Number(seleccionado) === c ? 'selected' : ''}>${c} min</option>`);
+  }
+  return opts.join('');
+}
+
+/**
+ * HTML de una fila de evento de producción. El evento 'inicial' es el producto
+ * con el que arranca el turno; 'producto' es un cambio de producto; 'ciclo' es
+ * un cambio de velocidad del horno (mismo producto, se deshabilita el nombre).
+ */
+function htmlEventoProduccion(lineaId, ev, i, palette) {
+  const esInicial = ev.tipo === 'inicial';
+  const esCiclo = ev.tipo === 'ciclo';
+  const titulo = esInicial ? 'Producto inicial del turno'
+    : esCiclo ? `Cambio de ciclo #${i}` : `Cambio de producto #${i}`;
+  const colorCabecera = esInicial ? 'text-amber-800 bg-amber-100'
+    : esCiclo ? 'text-indigo-700 bg-indigo-50' : 'text-emerald-700 bg-emerald-50';
+  const botonQuitar = esInicial ? '' :
+    `<button type="button" onclick="quitarEventoProduccion('${lineaId}', ${i})" class="text-[10px] text-rose-500 hover:text-rose-700 font-bold px-1">✕ quitar</button>`;
+
+  // En un cambio de ciclo el producto y el formato se heredan del evento
+  // previo; solo se edita el ciclo. Por eso esos campos quedan ocultos.
+  const camposProducto = esCiclo ? '' : `
+    <div>
+      <label class="text-[8px] font-bold text-slate-500 uppercase">Producto</label>
+      <input type="text" id="evProd_${lineaId}_${i}" value="${esc(ev.producto || '')}" placeholder="Ej: BARRACAS" class="field text-xs p-1" onchange="recalcularProyeccion('${lineaId}')">
+    </div>
+    <div>
+      <label class="text-[8px] font-bold text-slate-500 uppercase">Formato</label>
+      <select id="evFormato_${lineaId}_${i}" class="field text-xs p-1" onchange="recalcularProyeccion('${lineaId}')">${opcionesFormato(ev.formatoId || '')}</select>
+    </div>`;
+
+  return `
+    <div class="p-2 border ${palette.borde} rounded space-y-1" data-evento-tipo="${ev.tipo}">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${colorCabecera}">${titulo}</span>
+        ${botonQuitar}
+      </div>
+      <div class="grid grid-cols-2 gap-1">
+        <div>
+          <label class="text-[8px] font-bold text-slate-500 uppercase">Hora</label>
+          <input type="time" id="evHora_${lineaId}_${i}" value="${ev.hora || ''}" class="field text-xs p-1" onchange="recalcularProyeccion('${lineaId}')" ${esInicial ? '' : ''}>
+        </div>
+        <div>
+          <label class="text-[8px] font-bold text-slate-500 uppercase">Ciclo (min)</label>
+          <select id="evCiclo_${lineaId}_${i}" class="field text-xs p-1" onchange="recalcularProyeccion('${lineaId}')">${opcionesCiclo(ev.ciclo || '')}</select>
+        </div>
+        ${camposProducto}
+      </div>
+      <div id="evRitmo_${lineaId}_${i}" class="text-[9px] font-bold text-amber-700 text-center bg-amber-100 rounded py-0.5">— m²/h</div>
+    </div>`;
+}
 
 /** Dibuja el formulario de objetivos/reales para cada línea activa, dentro del modal de indicadores. */
 export function renderObjetivosModal() {
@@ -35,7 +112,12 @@ export function renderObjetivosModal() {
   document.getElementById('objetivosLineasContainer').innerHTML = lineasActivas().map((l, idx) => {
     const p = paletas[idx % paletas.length];
     const o = s.objetivos.porLinea[l.id];
-    const lecturas = o.lecturasQuemado || [{ hora: '', real: '' }, { hora: '', real: '' }, { hora: '', real: '' }];
+    const lecturas = (Array.isArray(o.lecturasQuemado) && o.lecturasQuemado.length)
+      ? o.lecturasQuemado
+      : [{ hora: '', real: 0 }, { hora: '', real: 0 }, { hora: '', real: 0 }];
+    const eventos = (Array.isArray(o.eventosProduccion) && o.eventosProduccion.length)
+      ? o.eventosProduccion
+      : [{ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 }];
     const lecturasCal = (o.lecturasCalidad && o.lecturasCalidad.length === 8)
       ? o.lecturasCalidad
       : Array(8).fill(null).map((_, i) => ({ hora: defaultHoras[i], global: null, parcial: null }));
@@ -85,31 +167,55 @@ export function renderObjetivosModal() {
           Quemado y Rendimiento
         </h5>
         
-        <div class="grid grid-cols-1 lg:grid-cols-[200px_1fr_180px] gap-4 items-start">
-          <!-- Objetivo de quemado -->
-          <div>
-            <label class="text-[10px] font-bold text-slate-600 uppercase">Objetivo quemado (m²/turno)</label>
-            <input type="number" id="quemadoObj_${l.id}" step="1" value="${o.quemadoObj || 0}" placeholder="Ej: 2765" class="field mt-1">
-          </div>
-
-          <!-- Tomas reales de quemado -->
-          <div>
-            <label class="text-[10px] font-bold text-slate-600 uppercase mb-2 block">Tomas reales de quemado</label>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              ${lecturas.map((x, i) => `
-                <div class="p-2 bg-amber-50 border ${p.borde} rounded">
-                  <div class="text-[9px] font-black ${p.texto} uppercase mb-1">Toma ${i + 1}</div>
-                  <input type="time" id="quemadoHora_${l.id}_${i}" value="${x.hora || ''}" class="field text-xs mb-1">
-                  <input type="number" id="quemadoReal_${l.id}_${i}" step="1" min="0" value="${x.real || ''}" placeholder="m² reales" class="field text-xs">
-                </div>
-              `).join('')}
+        <!-- EVENTOS DE PRODUCCIÓN: producto inicial + cambios de producto/ciclo -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-[10px] font-bold text-slate-600 uppercase">Producto y ciclo del horno durante el turno</label>
+            <div class="flex gap-2">
+              <button type="button" onclick="agregarEventoProduccion('${l.id}','producto')" class="btn bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] px-2 py-1">+ Cambio de producto</button>
+              <button type="button" onclick="agregarEventoProduccion('${l.id}','ciclo')" class="btn bg-indigo-600 text-white hover:bg-indigo-700 text-[10px] px-2 py-1">+ Modificar ciclo</button>
             </div>
           </div>
+          <div id="eventosContainer_${l.id}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            ${eventos.map((ev, i) => htmlEventoProduccion(l.id, ev, i, p)).join('')}
+          </div>
+          <p class="text-[9px] text-slate-500 italic mt-1">Cargá el producto con el que arranca el turno. Agregá un cambio solo cuando cambie el producto o la velocidad (ciclo) del horno; ahí se marca el quiebre en el gráfico de calidad y se recalcula el objetivo.</p>
+        </div>
 
-          <!-- Rendimiento final -->
-          <div>
-            <label class="text-[10px] font-bold ${p.texto} uppercase">Rendimiento final</label>
-            <div id="rendReal_${l.id}" class="mt-1 p-3 bg-slate-200 text-slate-800 font-black text-xs rounded text-center">— (Auto)</div>
+        <!-- TOMAS DE m² REALES (solo hora + valor) -->
+        <div class="mb-4">
+          <label class="text-[10px] font-bold text-slate-600 uppercase mb-2 block">Tomas de m² quemados (real medido)</label>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            ${lecturas.map((x, i) => `
+              <div class="p-2 bg-amber-50 border ${p.borde} rounded">
+                <div class="text-[9px] font-black ${p.texto} uppercase mb-1">Toma ${i + 1}</div>
+                <div class="grid grid-cols-2 gap-1">
+                  <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase">Hora</label>
+                    <input type="time" id="quemadoHora_${l.id}_${i}" value="${x.hora || ''}" class="field text-xs p-1" onchange="recalcularProyeccion('${l.id}')">
+                  </div>
+                  <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase">m² reales</label>
+                    <input type="number" id="quemadoReal_${l.id}_${i}" step="1" min="0" value="${x.real || ''}" placeholder="m²" class="field text-xs p-1" onchange="recalcularProyeccion('${l.id}')">
+                  </div>
+                </div>
+                <div id="tomaRend_${l.id}_${i}" class="text-[9px] font-bold text-slate-500 text-center mt-1">rend: —</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Panel de producción proyectada / objetivo dinámico y rendimiento -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="p-3 bg-amber-50 border ${p.borde} rounded">
+            <div class="text-[10px] font-black text-amber-700 uppercase mb-1">Producción proyectada del turno (8 h)</div>
+            <div id="prodProyectada_${l.id}" class="text-lg font-black text-slate-800">— m²</div>
+            <div id="prodDetalle_${l.id}" class="text-[9px] text-slate-500 mt-1 leading-tight"></div>
+          </div>
+          <div class="p-3 bg-slate-100 border border-slate-200 rounded">
+            <div class="text-[10px] font-black text-slate-600 uppercase mb-1">Rendimiento (última toma)</div>
+            <div id="rendReal_${l.id}" class="text-sm font-black text-slate-800">— (Auto)</div>
+            <button type="button" onclick="abrirGestorFormatos()" class="text-[9px] text-sky-600 hover:text-sky-800 underline mt-2">+ Agregar / editar formatos del horno</button>
           </div>
         </div>
       </div>
@@ -201,6 +307,9 @@ export function abrirIndicadores() {
     if (elRend) {
       elRend.innerText = ultima ? `${ultima.real} m² — última toma ${ultima.hora}` : 'Sin tomas registradas';
     }
+
+    // Mostrar la proyección de producción con los datos ya cargados.
+    recalcularProyeccion(l.id);
   });
 
   abrir('modalIndicadores');
@@ -249,11 +358,20 @@ export function guardarObjetivos() {
 
     o.realProd = parseFloat(document.getElementById(`realProd_${l.id}`)?.value) || 0;
 
-    o.quemadoObj = parseFloat(document.getElementById(`quemadoObj_${l.id}`)?.value) || 0;
+    // Eventos de producción (producto inicial + cambios) leídos del DOM.
+    o.eventosProduccion = leerEventosDom(l.id, o.eventosProduccion);
+
+    // Tomas de m² reales: solo hora + valor.
     o.lecturasQuemado = [0, 1, 2].map(i => ({
       hora: document.getElementById(`quemadoHora_${l.id}_${i}`)?.value || '',
       real: parseFloat(document.getElementById(`quemadoReal_${l.id}_${i}`)?.value) || 0
     }));
+
+    // Objetivo dinámico y quiebres a partir de los eventos.
+    const tramos = tramosDeEventos(o.eventosProduccion);
+    const proy = proyectarProduccionTurno(tramos, s.turno || 'Mañana');
+    o.produccionProyectada = Math.round(proy.totalProyectado);
+    o.quiebresProducto = proy.quiebres;
   });
 
   persistir();
@@ -314,6 +432,191 @@ function cargarDefectosHoraActual(lineaId) {
   mostrarAlertaKira(`Defectos cargados para las ${hora}. Total: ${defectosLinea.length} defectos registrados.`, 'Carga de Defectos', 'exito');
 }
 
+/**
+ * Lee los eventos de producción desde el DOM para una línea. Cada evento es
+ * {tipo, hora, producto, formatoId, ciclo}. Los cambios de ciclo heredan
+ * producto y formato del evento anterior (no tienen esos inputs visibles).
+ * @param {string} lineaId
+ * @param {Array} eventosPrevios  usado para saber cuántos eventos hay
+ */
+function leerEventosDom(lineaId, eventosPrevios) {
+  const cantidad = Array.isArray(eventosPrevios) && eventosPrevios.length ? eventosPrevios.length : 1;
+  const eventos = [];
+  for (let i = 0; i < cantidad; i++) {
+    const cont = document.querySelector(`#eventosContainer_${lineaId} [data-evento-tipo]:nth-child(${i + 1})`);
+    const tipo = cont?.getAttribute('data-evento-tipo') || (i === 0 ? 'inicial' : 'producto');
+    const hora = document.getElementById(`evHora_${lineaId}_${i}`)?.value || '';
+    const ciclo = parseInt(document.getElementById(`evCiclo_${lineaId}_${i}`)?.value, 10) || 0;
+    // producto/formato: en cambios de ciclo no hay inputs → se resuelven luego.
+    const producto = document.getElementById(`evProd_${lineaId}_${i}`)?.value?.trim() ?? null;
+    const formatoId = document.getElementById(`evFormato_${lineaId}_${i}`)?.value ?? null;
+    eventos.push({ tipo, hora, ciclo, producto, formatoId });
+  }
+
+  // Resolver herencia: un cambio de ciclo (sin producto/formato propios) toma
+  // el producto y formato vigentes del evento anterior.
+  let ultimoProducto = '', ultimoFormato = '';
+  eventos.forEach(ev => {
+    if (ev.producto === null || ev.producto === undefined) ev.producto = ultimoProducto;
+    if (ev.formatoId === null || ev.formatoId === undefined) ev.formatoId = ultimoFormato;
+    if (ev.producto) ultimoProducto = ev.producto;
+    if (ev.formatoId) ultimoFormato = ev.formatoId;
+  });
+
+  return eventos;
+}
+
+/**
+ * Convierte la lista de eventos en tramos aptos para proyectarProduccionTurno.
+ * Cada tramo necesita hora, formatoId, ciclo y producto.
+ */
+function tramosDeEventos(eventos) {
+  if (!Array.isArray(eventos)) return [];
+  return eventos
+    .filter(ev => ev.hora && ev.formatoId && Number(ev.ciclo) > 0)
+    .map(ev => ({
+      hora: ev.hora,
+      formatoId: ev.formatoId,
+      ciclo: Number(ev.ciclo),
+      producto: ev.producto || ''
+    }));
+}
+
+/**
+ * Recalcula en vivo el objetivo dinámico del turno, el ritmo de cada evento y
+ * el rendimiento de cada toma (real acumulado vs objetivo acumulado a su hora).
+ */
+function recalcularProyeccion(lineaId) {
+  const s = sesion();
+  const turno = s.turno || 'Mañana';
+  const o = s.objetivos?.porLinea?.[lineaId];
+
+  const eventos = leerEventosDom(lineaId, o?.eventosProduccion);
+  const tramos = tramosDeEventos(eventos);
+
+  // Ritmo (m²/h) de cada evento.
+  eventos.forEach((ev, i) => {
+    const el = document.getElementById(`evRitmo_${lineaId}_${i}`);
+    if (!el) return;
+    if (ev.formatoId && Number(ev.ciclo) > 0) {
+      el.textContent = `${m2PorHoraPorId(ev.formatoId, ev.ciclo).toFixed(1)} m²/h`;
+    } else {
+      el.textContent = '— m²/h';
+    }
+  });
+
+  // Proyección / objetivo dinámico del turno.
+  const proy = proyectarProduccionTurno(tramos, turno);
+  const elProd = document.getElementById(`prodProyectada_${lineaId}`);
+  const elDet = document.getElementById(`prodDetalle_${lineaId}`);
+
+  if (elProd) {
+    elProd.textContent = proy.totalProyectado > 0
+      ? `${Math.round(proy.totalProyectado).toLocaleString('es-AR')} m²`
+      : '— m²';
+  }
+  if (elDet) {
+    if (proy.tramos.length === 0) {
+      elDet.textContent = 'Cargá hora, formato y ciclo en el producto inicial.';
+    } else {
+      elDet.innerHTML = proy.tramos.map(t => {
+        const fmt = obtenerFormato(t.formatoId);
+        const nombreFmt = fmt ? fmt.nombre : t.formatoId;
+        const prod = t.producto ? ` · ${esc(t.producto)}` : '';
+        return `<div>${t.hora} — ${nombreFmt} c${t.ciclo}${prod}: ${Math.round(t.minutos)} min × ${t.m2h.toFixed(0)} m²/h = <b>${Math.round(t.m2Tramo)} m²</b></div>`;
+      }).join('') + (proy.quiebres.length
+        ? `<div class="text-amber-600 mt-1">⚠ ${proy.quiebres.length} quiebre(s): ${proy.quiebres.map(q => q.tipo).join(', ')}.</div>`
+        : '');
+    }
+  }
+
+  // Rendimiento de cada toma: real acumulado hasta su hora vs objetivo
+  // acumulado a esa misma hora.
+  const tomas = [0, 1, 2].map(i => ({
+    hora: document.getElementById(`quemadoHora_${lineaId}_${i}`)?.value || '',
+    real: parseFloat(document.getElementById(`quemadoReal_${lineaId}_${i}`)?.value) || 0
+  }));
+
+  // Acumular m² reales por hora (las tomas suelen ser lecturas acumuladas;
+  // acá tomamos el valor cargado como el acumulado real hasta esa hora).
+  let ultimaRend = null, ultimaHora = '';
+  tomas.forEach((t, i) => {
+    const el = document.getElementById(`tomaRend_${lineaId}_${i}`);
+    if (!el) return;
+    if (t.hora && t.real > 0 && tramos.length) {
+      const rend = rendimientoEnToma(t.real, tramos, turno, t.hora);
+      if (rend !== null) {
+        el.textContent = `rend: ${rend.toFixed(1)}%`;
+        el.className = `text-[9px] font-bold text-center mt-1 ${rend >= 85 ? 'text-emerald-600' : rend >= 80 ? 'text-amber-600' : 'text-rose-600'}`;
+        ultimaRend = rend; ultimaHora = t.hora;
+      } else {
+        el.textContent = 'rend: —';
+      }
+    } else {
+      el.textContent = 'rend: —';
+      el.className = 'text-[9px] font-bold text-slate-500 text-center mt-1';
+    }
+  });
+
+  const elRend = document.getElementById(`rendReal_${lineaId}`);
+  if (elRend) {
+    elRend.textContent = ultimaRend !== null
+      ? `${ultimaRend.toFixed(1)}% — ${ultimaHora} hs`
+      : '— (Auto)';
+  }
+}
+
+/**
+ * Agrega un evento de producción (cambio de producto o de ciclo) a una línea.
+ * Persiste primero lo cargado en el DOM para no perderlo al re-renderizar.
+ */
+function agregarEventoProduccion(lineaId, tipo) {
+  const s = sesion();
+  const o = s.objetivos.porLinea[lineaId];
+  o.eventosProduccion = leerEventosDom(lineaId, o.eventosProduccion);
+  o.eventosProduccion.push({ tipo, hora: '', producto: '', formatoId: '', ciclo: 0 });
+  renderObjetivosModal();
+  recalcularProyeccion(lineaId);
+}
+
+/** Quita el evento en la posición dada (nunca el inicial, índice 0). */
+function quitarEventoProduccion(lineaId, indice) {
+  if (indice <= 0) return;
+  const s = sesion();
+  const o = s.objetivos.porLinea[lineaId];
+  o.eventosProduccion = leerEventosDom(lineaId, o.eventosProduccion);
+  o.eventosProduccion.splice(indice, 1);
+  renderObjetivosModal();
+  recalcularProyeccion(lineaId);
+}
+
+/**
+ * Abre un prompt simple para agregar un formato nuevo al horno (lado1, lado2,
+ * piezas por fila). El sistema queda abierto a formatos futuros sin tocar código.
+ */
+function abrirGestorFormatos() {
+  const lados = prompt(
+    'Nuevo formato del horno.\nIngresá: lado1(cm), lado2(cm), piezas por fila\nEjemplo: 60,60,4',
+    ''
+  );
+  if (!lados) return;
+  const partes = lados.split(/[,;\s]+/).map(x => parseFloat(x.replace(',', '.')));
+  const [l1, l2, pf] = partes;
+  if (!(l1 > 0) || !(l2 > 0) || !(pf > 0)) {
+    mostrarAlertaKira('Datos inválidos. Formato esperado: lado1, lado2, piezas por fila (ej: 60,60,4).', 'Formatos del horno', 'advertencia');
+    return;
+  }
+  try {
+    const nuevo = agregarFormato({ lado1: l1, lado2: l2, piezasFila: pf });
+    guardarFormatosHorno(listarFormatos());
+    renderObjetivosModal();
+    lineasActivas().forEach(l => recalcularProyeccion(l.id));
+    mostrarAlertaKira(`Formato ${nuevo.nombre} agregado (${nuevo.piezasFila} piezas/fila).`, 'Formatos del horno', 'exito');
+  } catch (e) {
+    mostrarAlertaKira(e.message || 'No se pudo agregar el formato.', 'Formatos del horno', 'advertencia');
+  }
+}
+
 // ==========================================================
 // EXPOSICIÓN A window
 // ----------------------------------------------------------
@@ -322,3 +625,7 @@ function cargarDefectosHoraActual(lineaId) {
 window.abrirIndicadores = abrirIndicadores;
 window.guardarObjetivos = guardarObjetivos;
 window.cargarDefectosHoraActual = cargarDefectosHoraActual;
+window.recalcularProyeccion = recalcularProyeccion;
+window.abrirGestorFormatos = abrirGestorFormatos;
+window.agregarEventoProduccion = agregarEventoProduccion;
+window.quitarEventoProduccion = quitarEventoProduccion;

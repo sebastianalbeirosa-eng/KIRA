@@ -1138,9 +1138,9 @@ body {
   background: white;
   border-radius: 16px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  padding: clamp(1.25rem, 5vh, 3rem) clamp(1.25rem, 3vw, 2.5rem);
+  padding: clamp(1.1rem, 3.5vh, 2.25rem) clamp(1.25rem, 2.5vw, 2.25rem);
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   max-height: calc(100dvh - 2 * clamp(0.75rem, 3vh, 2rem));
   overflow-y: auto;
   text-align: center;
@@ -1165,14 +1165,14 @@ body {
 }
 
 .bloqueo-titulo {
-  font-size: 1.75rem;
+  font-size: clamp(1.35rem, 1.8vw, 1.6rem);
   font-weight: 700;
   color: #0f172a;
   margin-bottom: 0.5rem;
 }
 
 .bloqueo-usuario {
-  font-size: 1.125rem;
+  font-size: clamp(1rem, 1.3vw, 1.125rem);
   font-weight: 600;
   color: #3b82f6;
   margin-bottom: 0.25rem;

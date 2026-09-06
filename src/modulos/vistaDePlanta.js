@@ -24,6 +24,23 @@ import { asegurarNotaTurno } from './notasTurno.js';
 import { asegurarDefectosSesion, renderDefectos } from './gestionDefectos.js';
 import { renderAnalisis } from './graficosYAnalisis.js';
 import { todasParadas, todasDefectos } from './historicos.js';
+import { minutosDesdeInicioTurno, objetivoAcumuladoHasta } from '../nucleo/horno.js';
+
+/**
+ * Convierte la lista de eventos de producción de una línea en tramos aptos
+ * para los cálculos de horno. Debe coincidir con la del form de indicadores.
+ */
+function tramosDeEventosObjetivo(eventos) {
+  if (!Array.isArray(eventos)) return [];
+  return eventos
+    .filter(ev => ev.hora && ev.formatoId && Number(ev.ciclo) > 0)
+    .map(ev => ({
+      hora: ev.hora,
+      formatoId: ev.formatoId,
+      ciclo: Number(ev.ciclo),
+      producto: ev.producto || ''
+    }));
+}
 
 // Variable de estado del módulo: define si el Análisis muestra el turno
 // actual o los últimos 7 días. Se lee desde graficosYAnalisis.js también.
@@ -432,31 +449,37 @@ export function calcularKpisPlanta(l) {
     return Math.max(0, Math.min(TURNO_MIN, total - inicio));
   }
 
+  // ---------- RENDIMIENTO (mismo cálculo que el form de Indicadores) ----------
+  // Rendimiento = m² reales acumulados hasta la última toma / objetivo teórico
+  // acumulado hasta esa misma hora, usando los eventos de producción (producto
+  // inicial + cambios de producto/ciclo) que definen la velocidad dinámica.
   let objetivoTotal = 0, realTotal = 0;
   const rendimientoTomas = [];
+  const turnoActualRend = s.turno || 'Mañana';
 
   lineasIter.forEach(lc => {
     const o = s.objetivos.porLinea[lc.id];
-    if (!o || !o.quemadoObj) return;
+    if (!o) return;
 
-    const lecturas = (o.lecturasQuemado || [])
-      .filter(x => x.hora && x.real >= 0)
-      .map(x => {
-        const minutos = minutosDesdeInicio(x.hora);
-        const objetivo = o.quemadoObj * (minutos / TURNO_MIN);
-        const desvio = x.real - objetivo;
-        const cumplimiento = objetivo > 0 ? (x.real / objetivo) * 100 : null;
-        return { ...x, minutos, objetivo, desvio, cumplimiento };
-      })
-      .filter(x => x.minutos !== null)
+    const tramos = tramosDeEventosObjetivo(o.eventosProduccion);
+    if (!tramos.length) return;
+
+    // Última toma con m² reales cargados.
+    const tomasValidas = (o.lecturasQuemado || [])
+      .filter(x => x.hora && x.real > 0)
+      .map(x => ({ ...x, minutos: minutosDesdeInicioTurno(x.hora, turnoActualRend) }))
+      .filter(x => x.minutos !== null && x.minutos > 0)
       .sort((a, b) => a.minutos - b.minutos);
 
-    if (!lecturas.length) return;
+    if (!tomasValidas.length) return;
 
-    rendimientoTomas.push({ linea: lc.id, lineaNombre: lc.nombre, objetivoTurno: o.quemadoObj, tomas: lecturas });
+    const ultima = tomasValidas[tomasValidas.length - 1];
+    const objetivoAcum = objetivoAcumuladoHasta(tramos, turnoActualRend, ultima.minutos);
+    if (!(objetivoAcum > 0)) return;
 
-    const ultima = lecturas[lecturas.length - 1];
-    objetivoTotal += ultima.objetivo;
+    rendimientoTomas.push({ linea: lc.id, lineaNombre: lc.nombre, tomas: tomasValidas });
+
+    objetivoTotal += objetivoAcum;
     realTotal += ultima.real;
   });
 
@@ -818,16 +841,39 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
         console.log(`[${tipoCalidad}] Valores originales:`, valoresOriginales);
       }
 
-      // Interpolar puntos adicionales donde la línea cruza el objetivo
-      const valoresInterpolados = [];
-      const horasInterpoladas = [];
-      const indicesOriginalesTemp = [];
-      
+      // Interpolar puntos adicionales EXACTAMENTE donde la línea cruza el
+      // objetivo. Así cada segmento queda completamente de un lado del
+      // objetivo y su color (verde sobre / rojo bajo) es preciso, sin
+      // "tapar" los puntos originales medidos.
+      // Construir puntos {x, y}. A cada punto ORIGINAL se le asigna un índice
+      // X entero secuencial (0, 1, 2, ...), de modo que las horas queden
+      // SIEMPRE equiespaciadas en el eje, sin importar cuántos cruces haya.
+      // Los puntos interpolados de cruce reciben un X fraccional entre los
+      // dos originales que los rodean, para caer en su posición correcta.
+      const puntos = [];             // [{x, y}]
+      const indicesOriginalesTemp = []; // posiciones (en 'puntos') que son originales
+
       for (let i = 0; i < valoresOriginales.length; i++) {
         const valorActual = valoresOriginales[i];
-        valoresInterpolados.push(valorActual);
-        horasInterpoladas.push(horasOriginales[i]);
-        indicesOriginalesTemp.push(valoresInterpolados.length - 1); // Marcar este índice como original
+
+        if (i > 0) {
+          const valorPrevio = valoresOriginales[i - 1];
+          if (valorPrevio !== null && valorActual !== null) {
+            const cruzaHaciaAbajo = valorPrevio > objetivo && valorActual < objetivo;
+            const cruzaHaciaArriba = valorPrevio < objetivo && valorActual > objetivo;
+            if (cruzaHaciaAbajo || cruzaHaciaArriba) {
+              // Fracción del tramo (0..1) donde el valor iguala al objetivo.
+              const t = (objetivo - valorPrevio) / (valorActual - valorPrevio);
+              if (t > 0 && t < 1) {
+                // X del cruce: entre el índice del punto previo (i-1) y el actual (i).
+                puntos.push({ x: (i - 1) + t, y: objetivo });
+              }
+            }
+          }
+        }
+
+        puntos.push({ x: i, y: valorActual });
+        indicesOriginalesTemp.push(puntos.length - 1);
       }
 
       if (idx === 0) {
@@ -835,18 +881,16 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
       }
 
       // Calcular el máximo y mínimo valor medido
-      const valoresValidos = valoresInterpolados.filter(v => v !== null);
+      const valoresValidos = puntos.map(p => p.y).filter(v => v !== null);
       if (valoresValidos.length > 0) {
-        const maxLocal = Math.max(...valoresValidos);
-        const minLocal = Math.min(...valoresValidos);
-        maxValorMedido = Math.max(maxValorMedido, maxLocal);
-        minValorMedido = Math.min(minValorMedido, minLocal);
+        maxValorMedido = Math.max(maxValorMedido, ...valoresValidos);
+        minValorMedido = Math.min(minValorMedido, ...valoresValidos);
       }
 
       // Configuración del dataset con colores dinámicos por segmento
       datasets.push({
         label: linea?.nombre || `Línea ${idx + 1}`,
-        data: valoresInterpolados,
+        data: puntos,
         borderColor: 'rgb(52, 211, 153)', // Color por defecto (verde)
         backgroundColor: 'rgb(52, 211, 153)',
         borderWidth: 3,
@@ -897,15 +941,11 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
 
     if (datasets.length === 0) return;
 
-    // Generar etiquetas solo con las horas que tienen una lectura válida.
-    const etiquetasX = datasets[0].data.map((_, i) => {
-      // Solo mostrar etiqueta si es un punto original
-      if (indicesOriginales.includes(i)) {
-        const indiceOriginal = indicesOriginales.indexOf(i);
-        return horasOriginales[indiceOriginal] || '';
-      }
-      return ''; // Etiqueta vacía para puntos interpolados
-    });
+    // Con eje X lineal, cada hora original vive en un índice entero (0,1,2,...).
+    // Este mapa índice→hora se usa para los ticks del eje.
+    const horaPorIndice = {};
+    horasOriginales.forEach((h, i) => { horaPorIndice[i] = h || ''; });
+    const totalOriginales = horasOriginales.length;
 
     // Calcular rango dinámico del eje Y con margen del 15% hacia arriba y hacia abajo
     const margenMin = minValorMedido * 0.15;
@@ -923,11 +963,64 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
     // Obtener objetivos para la línea de referencia
     const objetivosLineas = lineasConDatos.map(item => item.objetivos?.calidad || 0);
 
+    // ----------------------------------------------------------
+    // QUIEBRES DE PRODUCTO / FORMATO / CICLO
+    // ----------------------------------------------------------
+    // Cada quiebre tiene una hora. Los mapeamos a una posición X (índice
+    // fraccional dentro del eje de horas de las lecturas de calidad) para
+    // poder dibujar una línea vertical exactamente donde ocurre el cambio.
+    const turnoActual = s?.turno || 'Mañana';
+
+    // Minutos de turno de cada hora original (para interpolar la X del quiebre).
+    const minutosPorIndiceOriginal = horasOriginales.map(h => minutosDesdeInicioTurno(h, turnoActual));
+
+    /** Convierte un minuto de turno a una posición X (índice lineal 0..n-1). */
+    const minutoAPosicionX = (minutoTurno) => {
+      if (minutoTurno === null || minutoTurno === undefined) return null;
+      // Buscar entre qué dos horas originales cae el quiebre.
+      for (let k = 0; k < minutosPorIndiceOriginal.length - 1; k++) {
+        const mA = minutosPorIndiceOriginal[k];
+        const mB = minutosPorIndiceOriginal[k + 1];
+        if (mA === null || mB === null) continue;
+        if (minutoTurno >= mA && minutoTurno <= mB && mB > mA) {
+          const frac = (minutoTurno - mA) / (mB - mA);
+          return k + frac; // índice fraccional entre k y k+1
+        }
+      }
+      // Fuera de rango: pegar al primer o último punto.
+      const primero = minutosPorIndiceOriginal[0];
+      const ultimo = minutosPorIndiceOriginal[minutosPorIndiceOriginal.length - 1];
+      if (primero !== null && minutoTurno <= primero) return 0;
+      if (ultimo !== null && minutoTurno >= ultimo) return minutosPorIndiceOriginal.length - 1;
+      return null;
+    };
+
+    // Reunir quiebres de todas las líneas mostradas, con su posición X.
+    // Se diferencian dos tipos:
+    //   - 'producto': cambio de producto (etiqueta = nombre del producto).
+    //   - 'ciclo'   : cambio de velocidad del horno (etiqueta = "Ciclo Nmin").
+    const quiebresGrafico = [];
+    lineasConDatos.forEach(item => {
+      const quiebres = item.objetivos?.quiebresProducto || [];
+      quiebres.forEach(q => {
+        const minuto = (q.minutoTurno !== undefined && q.minutoTurno !== null)
+          ? q.minutoTurno
+          : minutosDesdeInicioTurno(q.hora, turnoActual);
+        const posX = minutoAPosicionX(minuto);
+        if (posX === null) return;
+        const tipo = q.tipo === 'ciclo' ? 'ciclo' : 'producto';
+        const etiqueta = tipo === 'ciclo'
+          ? `Ciclo ${q.cicloNuevo || ''}min`
+          : (q.productoNuevo || 'Cambio');
+        quiebresGrafico.push({ posX, hora: q.hora || '', etiqueta, tipo });
+      });
+    });
+
     // Crear gráfico
     window[chartKey] = new Chart(canvas, {
       type: 'line',
       data: {
-        labels: etiquetasX,
+        // Con eje X lineal los datos son {x, y}; no se usan labels.
         datasets: datasets
       },
       options: {
@@ -935,7 +1028,8 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
         maintainAspectRatio: false,
         interaction: {
           intersect: false,
-          mode: 'index'
+          mode: 'nearest',
+          axis: 'x'
         },
         plugins: {
           datalabels: {
@@ -980,13 +1074,31 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             }
           },
           x: {
-            type: 'category',
-            offset: false,
+            // Eje lineal: las horas originales viven en índices enteros
+            // equiespaciados (0,1,2,...). Se agrega un margen de 0,4 índices
+            // a cada lado para que el primer y el último punto no queden
+            // pegados a las paredes del gráfico.
+            type: 'linear',
+            // Separación mínima de la primera toma respecto del eje Y.
+            // Bajá este número hacia 0 para pegarla más; subilo (ej. -0.15)
+            // para separarla un poco más.
+            min: -0.02,
+            max: (totalOriginales - 1) + 0.4,
+            // Forzar un tick EXACTO en cada índice de toma (0,1,2,...), sin
+            // importar el 'min'. Así la hora de la primera toma nunca se pierde.
+            afterBuildTicks: (axis) => {
+              axis.ticks = [];
+              for (let i = 0; i < totalOriginales; i++) {
+                axis.ticks.push({ value: i });
+              }
+            },
             ticks: {
               font: { size: 11 },
-              autoSkip: false, // No saltar etiquetas automáticamente
+              autoSkip: false,
               maxRotation: 0,
-              minRotation: 0
+              minRotation: 0,
+              // Mostrar la hora de la toma que corresponde a cada índice.
+              callback: (value) => horaPorIndice[Math.round(value)] || ''
             },
             grid: {
               color: 'rgba(148, 163, 184, 0.1)'
@@ -995,46 +1107,34 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
         }
       },
       plugins: [{
-        id: 'ocultarValoresInterpolados',
+        // Dibuja el valor de calidad (%) SOLO sobre los puntos originales
+        // (las tomas). Los puntos interpolados de cruce no llevan etiqueta.
+        id: 'etiquetasCalidad',
         afterDatasetsDraw(chart) {
-          // Este hook se ejecuta después de dibujar los datasets pero antes de otros elementos
-          // Aquí podemos interceptar solo los valores sobre los puntos
           const ctx = chart.ctx;
-          
-          // Guardamos el método original fillText
-          const originalFillText = ctx.fillText;
-          const meta = chart.getDatasetMeta(0);
-          
-          // Crear un array con las coordenadas Y de los puntos interpolados
-          const coordenadasInterpoladas = [];
-          meta.data.forEach((punto, idx) => {
-            if (!indicesOriginales.includes(idx)) {
-              coordenadasInterpoladas.push({
-                x: punto.x,
-                y: punto.y,
-                rango: 20 // Rango de píxeles alrededor del punto
-              });
-            }
+          chart.data.datasets.forEach((dataset, dsIdx) => {
+            const meta = chart.getDatasetMeta(dsIdx);
+            if (meta.hidden) return;
+            meta.data.forEach((punto, idx) => {
+              // Solo puntos originales (no interpolados).
+              if (!indicesOriginales.includes(idx)) return;
+              const valor = dataset.data[idx]?.y;
+              if (valor === null || valor === undefined || isNaN(valor)) return;
+
+              ctx.save();
+              ctx.font = 'bold 10px Segoe UI, Arial, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              // Contorno blanco para que el número se lea sobre la línea.
+              ctx.lineWidth = 3;
+              ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+              ctx.fillStyle = '#1e293b';
+              const texto = `${Number(valor).toFixed(1)}%`;
+              ctx.strokeText(texto, punto.x, punto.y - 8);
+              ctx.fillText(texto, punto.x, punto.y - 8);
+              ctx.restore();
+            });
           });
-          
-          // Sobrescribir fillText temporalmente
-          ctx.fillText = function(text, x, y, maxWidth) {
-            // Verificar si el texto es un número y está cerca de un punto interpolado
-            const esNumero = /^\d+(\.\d+)?$/.test(String(text).trim());
-            const estaCercaDeInterpolado = coordenadasInterpoladas.some(coord => 
-              Math.abs(coord.x - x) < coord.rango && Math.abs(coord.y - y) < coord.rango
-            );
-            
-            // Solo dibujar si NO es un número cerca de un punto interpolado
-            if (!esNumero || !estaCercaDeInterpolado) {
-              originalFillText.call(this, text, x, y, maxWidth);
-            }
-          };
-        },
-        afterDraw(chart) {
-          // Restaurar el método original después de terminar el dibujo completo
-          const ctx = chart.ctx;
-          ctx.fillText = ctx.fillText.originalMethod || ctx.fillText;
         }
       }, {
         id: 'lineaObjetivo',
@@ -1045,8 +1145,12 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
           
           if (!yScale || !xScale) return;
 
-          // Dibujar líneas de objetivo para cada línea de datos
-          objetivosLineas.forEach((objetivo, idx) => {
+          // Dibujar UNA línea punteada por cada valor de objetivo DISTINTO.
+          // (Deduplicado para no repetir la etiqueta cuando varias líneas
+          // comparten el mismo objetivo.)
+          const objetivosUnicos = [...new Set(objetivosLineas.filter(o => o > 0))];
+
+          objetivosUnicos.forEach((objetivo) => {
             const yPixel = yScale.getPixelForValue(objetivo);
             const xStart = xScale.left;
             const xEnd = xScale.right;
@@ -1061,11 +1165,61 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             ctx.stroke();
             ctx.restore();
 
-            // Etiqueta del objetivo
+            // Etiqueta "Objetivo: X%" en el extremo derecho de la línea.
+            ctx.save();
             ctx.fillStyle = 'rgb(100, 116, 139)';
             ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
             ctx.fillText(`Objetivo: ${objetivo}%`, xEnd - 5, yPixel - 5);
+            ctx.restore();
+          });
+        }
+      }, {
+        // Marcas verticales de "quiebre": cada cambio de producto/formato/ciclo
+        // durante el turno. KIRA distingue así que cada producto cerámico es
+        // distinto y no debe compararse como una curva continua.
+        id: 'quiebresProducto',
+        afterDatasetsDraw(chart) {
+          if (!quiebresGrafico.length) return;
+          const ctx = chart.ctx;
+          const xScale = chart.scales.x;
+          const yScale = chart.scales.y;
+          if (!xScale || !yScale) return;
+
+          quiebresGrafico.forEach(q => {
+            const xPixel = xScale.getPixelForValue(q.posX);
+            if (xPixel === null || isNaN(xPixel)) return;
+            const yTop = yScale.top;
+            const yBottom = yScale.bottom;
+
+            // Color según el tipo de quiebre: ámbar para cambio de producto,
+            // índigo para cambio de ciclo (velocidad del horno).
+            const esCiclo = q.tipo === 'ciclo';
+            const colorLinea = esCiclo ? 'rgba(79, 70, 229, 0.85)' : 'rgba(217, 119, 6, 0.85)';
+            const colorTexto = esCiclo ? 'rgba(67, 56, 202, 0.95)' : 'rgba(180, 83, 9, 0.95)';
+            const prefijo = esCiclo ? '⚙' : '⟂';
+
+            ctx.save();
+            ctx.strokeStyle = colorLinea;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(xPixel, yTop);
+            ctx.lineTo(xPixel, yBottom);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Etiqueta rotada con el detalle del quiebre.
+            ctx.translate(xPixel, yTop + 4);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = colorTexto;
+            ctx.font = 'bold 9px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
+            const texto = q.etiqueta.length > 18 ? q.etiqueta.slice(0, 17) + '…' : q.etiqueta;
+            ctx.fillText(`${prefijo} ${texto}${q.hora ? ' ' + q.hora : ''}`, 0, 14);
+            ctx.restore();
           });
         }
       }]

@@ -28,6 +28,10 @@ const pluginEtiquetasBarras = {
       meta.data.forEach((barra, index) => {
         const valorNumerico = dataset.data[index];
         if (valorNumerico === undefined || valorNumerico === null) return;
+        // Solo etiquetar valores numéricos. Los gráficos de línea con datos
+        // {x, y} (como los de calidad) no deben ser rotulados por este plugin
+        // de barras; si no, imprimirían "[object Object]".
+        if (typeof valorNumerico !== 'number') return;
         ctx.save();
         ctx.fillStyle = '#1e293b';
         ctx.font = 'bold 10px Segoe UI, Arial, sans-serif';

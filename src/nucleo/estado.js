@@ -203,18 +203,71 @@ export function asegurarObjetivosSesion(s) {
       s.objetivos.porLinea[l.id] = {
         calidad: 90, produccion: 0, vacioMax: 30,
         rendimientoObj: 0, realCalidad: 0, realProd: 0,
-        quemadoObj: 0, // Objetivo de m² quemados por línea, común a los 3 turnos
-        lecturasCalidad: Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }))
+        // Eventos de producción del turno. El primero (tipo 'inicial') es el
+        // producto con el que arranca el turno; los siguientes son cambios
+        // ('producto' o 'ciclo'). De acá salen el objetivo dinámico y los
+        // quiebres del gráfico de calidad.
+        eventosProduccion: [{ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 }],
+        // Tomas reales de m² quemados: SOLO hora + valor. El formato/ciclo con
+        // que se evalúa cada toma se deduce del evento vigente a esa hora.
+        lecturasQuemado: Array(3).fill(null).map(() => ({ hora: '', real: 0 })),
+        // Objetivo dinámico de m²/turno, calculado a partir de los eventos.
+        produccionProyectada: 0
       };
     } else {
       const o = s.objetivos.porLinea[l.id];
       if (typeof o.rendimientoObj !== 'number') o.rendimientoObj = 0;
-      if (typeof o.quemadoObj !== 'number') o.quemadoObj = 0;
       if (!Array.isArray(o.lecturasCalidad)) {
         o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
       }
+
+      // Migración de eventos de producción. Si no existen, intentamos
+      // reconstruirlos desde el formato viejo de lecturasQuemado (que traía
+      // producto/formato/ciclo por toma) para no perder datos cargados.
+      if (!Array.isArray(o.eventosProduccion) || o.eventosProduccion.length === 0) {
+        const viejas = Array.isArray(o.lecturasQuemado) ? o.lecturasQuemado : [];
+        const conDatos = viejas.filter(t => t && (t.producto || t.formatoId || t.ciclo));
+        if (conDatos.length) {
+          o.eventosProduccion = conDatos.map((t, i) => ({
+            tipo: i === 0 ? 'inicial' : 'producto',
+            hora: t.hora || '',
+            producto: t.producto || '',
+            formatoId: t.formatoId || '',
+            ciclo: Number(t.ciclo) || 0
+          }));
+        } else {
+          o.eventosProduccion = [{ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 }];
+        }
+      }
+
+      // lecturasQuemado se normaliza a solo {hora, real}.
+      if (!Array.isArray(o.lecturasQuemado)) {
+        o.lecturasQuemado = Array(3).fill(null).map(() => ({ hora: '', real: 0 }));
+      } else {
+        o.lecturasQuemado = o.lecturasQuemado.map(t => ({
+          hora: t?.hora || '',
+          real: Number(t?.real) || 0
+        }));
+      }
+
+      if (typeof o.produccionProyectada !== 'number') o.produccionProyectada = 0;
     }
   });
+}
+
+/**
+ * Devuelve el catálogo de formatos de horno guardado en la base (o null si
+ * nunca se personalizó). Vive a nivel global de la app, no por sesión, porque
+ * los formatos son un dato de planta común a todos los turnos.
+ */
+export function formatosHornoGuardados() {
+  return Array.isArray(db.formatosHorno) ? db.formatosHorno : null;
+}
+
+/** Persiste el catálogo de formatos de horno en la base. */
+export function guardarFormatosHorno(lista) {
+  db.formatosHorno = Array.isArray(lista) ? lista : [];
+  persistir();
 }
 
 /** Garantiza que la sesión tenga la estructura de producto/formato por línea. */

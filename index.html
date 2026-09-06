@@ -6,7 +6,9 @@
   <title>KIRA | Gestión de la Producción</title>
   <!-- Librerías externas: Tailwind CSS para diseño, Chart.js para gráficos y SheetJS para Excel -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Chart.js: se carga la copia local (vendor/) para que los gráficos funcionen sin internet.
+       Si por algún motivo no cargara, el onerror recurre al CDN como respaldo. -->
+  <script src="vendor/chart.umd.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';document.head.appendChild(s);"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <link rel="stylesheet" href="estilos.css">
@@ -1210,7 +1212,7 @@
 
 <!-- Modal de indicadores y objetivos optimizado para responsive -->
 <div id="modalIndicadores" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
-  <div class="panel w-full max-w-6xl max-h-[90vh] flex flex-col bg-white shadow-xl overflow-hidden">
+  <div class="panel w-full max-w-[min(96vw,72rem)] max-h-[92vh] flex flex-col bg-white shadow-xl overflow-hidden">
     
     <!-- Cabecera fija -->
     <div class="flex justify-between p-4 border-b border-slate-200">
@@ -1219,7 +1221,7 @@
     </div>
 
     <!-- Cuerpo con scroll interno para que los botones nunca queden ocultos -->
-    <div class="p-4 overflow-y-auto flex-1">
+    <div class="p-2 sm:p-4 overflow-y-auto flex-1">
       <div id="objetivosLineasContainer" class="space-y-3"></div>
     </div>
 

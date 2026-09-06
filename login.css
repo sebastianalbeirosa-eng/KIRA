@@ -62,16 +62,23 @@ body {
 }
 
 .brand-mark { 
-  width: clamp(58px, 7vw, 90px); 
-  height: clamp(110px, 10vh, 100px); 
+  width: clamp(48px, 5vw, 68px); 
+  height: clamp(48px, 5vw, 68px); 
   display: grid; 
   place-items: center; 
   background: #1378e5; 
   color: #fff; 
   font-weight: 900; 
-  font-size: clamp(3rem, 7vw, 4.375rem);
+  font-size: clamp(2rem, 3.5vw, 3rem);
   border-radius: 6px;
   flex-shrink: 0;
+}
+
+/* El nombre "KIRA" usaba text-7xl (fijo y enorme). Lo hacemos responsivo
+   para que acompañe al tamaño del monitor sin desbordar. */
+.brand-section .text-7xl {
+  font-size: clamp(2rem, 3.8vw, 3.25rem) !important;
+  line-height: 1.05;
 }
 
 .brand-divider {
@@ -91,10 +98,10 @@ body {
 }
 
 .features-title {
-  font-size: clamp(1.2rem, 2.2vw, 1.75rem);
+  font-size: clamp(1.1rem, 1.7vw, 1.5rem);
   font-weight: 400;
   line-height: 1.4;
-  margin-bottom: clamp(1.25rem, 4vh, 3rem);
+  margin-bottom: clamp(1rem, 3vh, 2.25rem);
   color: white;
 }
 
@@ -157,9 +164,9 @@ body {
   background: white;
   border-radius: 16px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-  padding: clamp(1.25rem, 5vh, 3rem) clamp(1.25rem, 3vw, 2.5rem);
+  padding: clamp(1.1rem, 3.5vh, 2.25rem) clamp(1.25rem, 2.5vw, 2.25rem);
   width: 100%;
-  max-width: 440px;
+  max-width: 420px;
   max-height: calc(100dvh - 2 * clamp(0.75rem, 3vh, 2rem));
   overflow-y: auto;
 }
@@ -182,7 +189,7 @@ body {
 }
 
 .login-title {
-  font-size: 1.75rem;
+  font-size: clamp(1.35rem, 1.8vw, 1.6rem);
   font-weight: 600;
   text-align: center;
   color: #0f172a;

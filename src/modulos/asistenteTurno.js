@@ -325,11 +325,12 @@ function paradaPrincipalDeEquipo(paradasScope, lineaId, equipoNombre) {
 function quemadoDeLinea(lineaId) {
   const s = sesion();
   const o = s.objetivos?.porLinea?.[lineaId];
-  if (!o || !o.quemadoObj) return null;
+  if (!o) return null;
   const lecturas = (o.lecturasQuemado || []).filter(x => x.hora && x.real > 0);
   if (!lecturas.length) return null;
   const ultima = [...lecturas].sort((a, b) => a.hora.localeCompare(b.hora)).pop();
-  return { real: ultima.real, hora: ultima.hora, objetivoTurno: o.quemadoObj };
+  // Objetivo dinámico = producción proyectada del turno (calculada por eventos).
+  return { real: ultima.real, hora: ultima.hora, objetivoTurno: o.produccionProyectada || 0 };
 }
 
 /**

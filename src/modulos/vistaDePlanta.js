@@ -15,9 +15,11 @@
 */
 
 import { valor, esc, hoyLocal } from '../nucleo/utilidades.js';
+import { db } from '../nucleo/almacenamiento.js';
 import {
   sesion, lineasActivas, lineaPorId, nombreLinea,
-  asegurarObjetivosSesion, asegurarProduccionSesion, TURNO_MIN
+  asegurarObjetivosSesion, asegurarProduccionSesion, TURNO_MIN,
+  eventosProduccionDia
 } from '../nucleo/estado.js';
 
 import { asegurarNotaTurno } from './notasTurno.js';
@@ -45,6 +47,16 @@ function tramosDeEventosObjetivo(eventos) {
 // Variable de estado del módulo: define si el Análisis muestra el turno
 // actual o los últimos 7 días. Se lee desde graficosYAnalisis.js también.
 export let analisisModo = 'turno';
+
+// Período de la Vista de Planta: 'turno' (solo el turno actual, como siempre)
+// o 'dia' (acumulado de los 3 turnos de la fecha, jornada 05:00→05:00).
+export let modoVistaPlanta = 'turno';
+
+/** Cambia el período de la Vista de Planta y refresca la pantalla. */
+export function cambiarPeriodoVista(modo) {
+  modoVistaPlanta = (modo === 'dia') ? 'dia' : 'turno';
+  if (!document.getElementById('vistaPlanta').classList.contains('hidden')) renderVistaPlanta();
+}
 
 /**
  * Cambia analisisModo. Existe como función (y no como reasignación directa
@@ -103,13 +115,13 @@ export function defectosAnalisis() {
 }
 
 /** Calcula las métricas agregadas (parada, vacío, eventos, disponibilidad) para un set de registros dado. */
-export function metricas(regs = datosVista()) {
+export function metricas(regs = datosVista(), minutosPeriodo = TURNO_MIN) {
   const parada = regs.reduce((a, x) => a + x.minutos, 0);
   const vacio = regs.reduce((a, x) => a + x.vacio, 0);
   const eventos = regs.reduce((a, x) => a + x.eventos, 0);
-  const disponibilidad = Math.max(0, 100 - (parada / TURNO_MIN * 100));
+  const disponibilidad = Math.max(0, 100 - (parada / minutosPeriodo * 100));
   const i = sesion().indicadores;
-  return { parada, vacio, eventos, disponibilidad, productivos: Math.max(0, TURNO_MIN - parada), calidad: i.calidad, productividad: i.productividad };
+  return { parada, vacio, eventos, disponibilidad, productivos: Math.max(0, minutosPeriodo - parada), calidad: i.calidad, productividad: i.productividad };
 }
 
 /** Dibuja las tarjetas KPI del dashboard operativo principal (pestaña "Dashboard"). */
@@ -353,14 +365,69 @@ export function cambiarAreaMonitoreada() {
  * de #vpKpis, lo que fallaba si el usuario no había visitado antes la
  * pestaña "Vista de Planta" (bug ya corregido: ver generarAsakai.js).
  */
+/**
+ * Promedia el porcentaje de defectos que se repiten en varios turnos,
+ * agrupando por (nombre + línea). Devuelve un defecto por grupo con el
+ * porcentaje promedio (redondeado a 2 decimales) y conservando la acción.
+ */
+function promediarDefectosPorNombre(defectos) {
+  const grupos = {};
+  defectos.forEach(d => {
+    const clave = `${d.linea}||${d.nombre}`;
+    if (!grupos[clave]) grupos[clave] = { ...d, _suma: 0, _cant: 0 };
+    grupos[clave]._suma += Number(d.porcentaje) || 0;
+    grupos[clave]._cant += 1;
+    if (d.accion && !grupos[clave].accion) grupos[clave].accion = d.accion;
+  });
+  return Object.values(grupos).map(g => {
+    const { _suma, _cant, ...resto } = g;
+    return { ...resto, porcentaje: +(_suma / _cant).toFixed(2) };
+  });
+}
+
+/**
+ * Devuelve las sesiones (turnos) de una fecha administrativa como
+ * [{turno, sesion}], en orden Mañana→Tarde→Noche. Usado por el modo "Día".
+ */
+function sesionesDelDia(fecha) {
+  const orden = { 'Mañana': 0, 'Tarde': 1, 'Noche': 2 };
+  return Object.entries(db.sesiones || {})
+    .filter(([key]) => key.startsWith(fecha + '|'))
+    .map(([key, ses]) => ({ turno: key.split('|')[1], sesion: ses }))
+    .sort((a, b) => (orden[a.turno] ?? 9) - (orden[b.turno] ?? 9));
+}
+
 export function calcularKpisPlanta(l) {
   const s = sesion();
   asegurarNotaTurno(s);
   asegurarDefectosSesion(s);
 
-  const paradasScope = s.paradas.filter(x => l === 'TODAS' || x.linea === l);
-  const defectosScope = s.defectos.filter(x => l === 'TODAS' || x.linea === l);
-  const m = metricas(paradasScope);
+  // MODO DÍA: acumular las 3 sesiones (turnos) de la fecha actual. MODO TURNO:
+  // trabajar solo con la sesión del turno actual (comportamiento de siempre).
+  const esModoDia = modoVistaPlanta === 'dia';
+  const fechaActual = valor('fecha');
+  const sesionesDia = esModoDia ? sesionesDelDia(fechaActual) : [{ turno: s.turno, sesion: s }];
+
+  // Paradas y defectos: en modo día se concatenan los de los 3 turnos.
+  const paradasFuente = esModoDia
+    ? sesionesDia.flatMap(({ sesion: ses }) => ses.paradas || [])
+    : s.paradas;
+  const defectosFuente = esModoDia
+    ? sesionesDia.flatMap(({ sesion: ses }) => ses.defectos || [])
+    : s.defectos;
+
+  const paradasScope = paradasFuente.filter(x => l === 'TODAS' || x.linea === l);
+  const defectosScopeRaw = defectosFuente.filter(x => l === 'TODAS' || x.linea === l);
+
+  // En modo día, un mismo defecto puede venir de varios turnos: se promedia
+  // su porcentaje por (nombre + línea) para no duplicar filas en el mapa.
+  const defectosScope = esModoDia
+    ? promediarDefectosPorNombre(defectosScopeRaw)
+    : defectosScopeRaw;
+
+  // Métricas: en modo día el turno de referencia es 24 h (3 × TURNO_MIN).
+  const minutosPeriodo = esModoDia ? TURNO_MIN * 3 : TURNO_MIN;
+  const m = metricas(paradasScope, minutosPeriodo);
   const lineasIter = l === 'TODAS' ? lineasActivas() : [lineaPorId(l)].filter(Boolean);
 
   let filasMaquinas = [];
@@ -415,8 +482,8 @@ export function calcularKpisPlanta(l) {
   const defectosOrdenados = [...defectosScope].sort((a, b) => b.porcentaje - a.porcentaje);
   const defectoPreponderante = defectosOrdenados[0] || null;
 
-  const pctParada = (m.parada / TURNO_MIN * 100).toFixed(1);
-  const pctVacio = (m.vacio / TURNO_MIN * 100).toFixed(1);
+  const pctParada = (m.parada / minutosPeriodo * 100).toFixed(1);
+  const pctVacio = (m.vacio / minutosPeriodo * 100).toFixed(1);
 
   // ---------- MÁQUINA MÁS CRÍTICA ----------
   const maquinaCritica = filasMaquinas[0];
@@ -453,40 +520,56 @@ export function calcularKpisPlanta(l) {
   // Rendimiento = m² reales acumulados hasta la última toma / objetivo teórico
   // acumulado hasta esa misma hora, usando los eventos de producción (producto
   // inicial + cambios de producto/ciclo) que definen la velocidad dinámica.
+  // En modo día se suman los m² reales y el objetivo acumulado de CADA turno
+  // (cada uno con su propio horario de inicio), y recién al final se divide.
+  // No se pueden promediar porcentajes de turnos distintos.
   let objetivoTotal = 0, realTotal = 0;
   const rendimientoTomas = [];
-  const turnoActualRend = s.turno || 'Mañana';
 
   lineasIter.forEach(lc => {
-    const o = s.objetivos.porLinea[lc.id];
-    if (!o) return;
-
-    const tramos = tramosDeEventosObjetivo(o.eventosProduccion);
+    const tramos = tramosDeEventosObjetivo(eventosProduccionDia(lc.id));
     if (!tramos.length) return;
 
-    // Última toma con m² reales cargados.
-    const tomasValidas = (o.lecturasQuemado || [])
-      .filter(x => x.hora && x.real > 0)
-      .map(x => ({ ...x, minutos: minutosDesdeInicioTurno(x.hora, turnoActualRend) }))
-      .filter(x => x.minutos !== null && x.minutos > 0)
-      .sort((a, b) => a.minutos - b.minutos);
+    sesionesDia.forEach(({ turno: turnoSes, sesion: ses }) => {
+      const o = ses.objetivos?.porLinea?.[lc.id];
+      if (!o) return;
 
-    if (!tomasValidas.length) return;
+      // Última toma con m² reales cargados en ESE turno.
+      const tomasValidas = (o.lecturasQuemado || [])
+        .filter(x => x.hora && x.real > 0)
+        .map(x => ({ ...x, minutos: minutosDesdeInicioTurno(x.hora, turnoSes) }))
+        .filter(x => x.minutos !== null && x.minutos > 0)
+        .sort((a, b) => a.minutos - b.minutos);
 
-    const ultima = tomasValidas[tomasValidas.length - 1];
-    const objetivoAcum = objetivoAcumuladoHasta(tramos, turnoActualRend, ultima.minutos);
-    if (!(objetivoAcum > 0)) return;
+      if (!tomasValidas.length) return;
 
-    rendimientoTomas.push({ linea: lc.id, lineaNombre: lc.nombre, tomas: tomasValidas });
+      const ultima = tomasValidas[tomasValidas.length - 1];
+      const objetivoAcum = objetivoAcumuladoHasta(tramos, turnoSes, ultima.minutos);
+      if (!(objetivoAcum > 0)) return;
 
-    objetivoTotal += objetivoAcum;
-    realTotal += ultima.real;
+      rendimientoTomas.push({ linea: lc.id, lineaNombre: lc.nombre, turno: turnoSes, tomas: tomasValidas });
+
+      objetivoTotal += objetivoAcum;
+      realTotal += ultima.real;
+    });
   });
 
   // ---------- CALIDAD ----------
-  const calidadScope = lineasIter.map(lc => s.objetivos.porLinea[lc.id]).filter(Boolean);
-  const calidadReal = calidadScope.length ? calidadScope.reduce((a, o) => a + (Number(o.realCalidad) || 0), 0) / calidadScope.length : 0;
-  const calidadParcial = calidadScope.length ? calidadScope.reduce((a, o) => a + (Number(o.calidadParcial) || 0), 0) / calidadScope.length : 0;
+  // Modo turno: objetivos de la sesión actual por línea.
+  // Modo día: objetivos de cada línea en cada turno con dato de calidad, para
+  // promediar la calidad global del día (promedio de los turnos con datos).
+  const calidadScope = esModoDia
+    ? sesionesDia.flatMap(({ sesion: ses }) =>
+        lineasIter.map(lc => ses.objetivos?.porLinea?.[lc.id]).filter(Boolean))
+    : lineasIter.map(lc => s.objetivos.porLinea[lc.id]).filter(Boolean);
+
+  // Para el promedio de calidad global/parcial del día solo cuentan los
+  // objetivos que efectivamente tienen una lectura de calidad cargada.
+  const calidadConDato = calidadScope.filter(o => Number(o.realCalidad) > 0);
+  const baseCal = calidadConDato.length ? calidadConDato : calidadScope;
+
+  const calidadReal = baseCal.length ? baseCal.reduce((a, o) => a + (Number(o.realCalidad) || 0), 0) / baseCal.length : 0;
+  const calidadParcial = baseCal.length ? baseCal.reduce((a, o) => a + (Number(o.calidadParcial) || 0), 0) / baseCal.length : 0;
   const calidadObjetivo = calidadScope.length ? calidadScope.reduce((a, o) => a + (Number(o.calidad) || 0), 0) / calidadScope.length : 0;
   const calidadDesvio = calidadParcial - calidadReal;
 
@@ -534,7 +617,8 @@ export function calcularKpisPlanta(l) {
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
     rendimientoPct, rendimientoValorColor,
     paradaValorColor, vacioValorColor, eficienciaValorColor,
-    egeTurno, egeValorColor
+    egeTurno, egeValorColor,
+    esModoDia, minutosPeriodo, sesionesDia
   };
 }
 
@@ -550,8 +634,30 @@ export function renderVistaPlanta() {
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
     rendimientoPct, rendimientoValorColor,
     paradaValorColor, vacioValorColor, eficienciaValorColor,
-    egeTurno, egeValorColor
+    egeTurno, egeValorColor,
+    esModoDia, sesionesDia
   } = calcularKpisPlanta(l);
+
+  // Ajuste de LAYOUT según el período: en modo "Día" ocultamos el gráfico de
+  // calidad parcial (que solo tiene sentido hora a hora por turno) y dejamos
+  // el gráfico de calidad global ocupando todo el ancho. En modo turno vuelve
+  // el layout de dos columnas con ambos gráficos.
+  const gridCalidad = document.getElementById('gridCalidad');
+  const panelParcial = document.getElementById('panelCalidadParcial');
+  const tituloGlobal = document.getElementById('tituloCalidadGlobal');
+  if (gridCalidad && panelParcial) {
+    if (esModoDia) {
+      gridCalidad.classList.remove('xl:grid-cols-2');
+      gridCalidad.classList.add('xl:grid-cols-1');
+      panelParcial.classList.add('hidden');
+      if (tituloGlobal) tituloGlobal.textContent = 'Evolución del día (24 h) — Calidad Global';
+    } else {
+      gridCalidad.classList.add('xl:grid-cols-2');
+      gridCalidad.classList.remove('xl:grid-cols-1');
+      panelParcial.classList.remove('hidden');
+      if (tituloGlobal) tituloGlobal.textContent = 'Evolución hora a hora — Calidad Global';
+    }
+  }
 
   // INYECCIÓN DE HTML DE LAS TARJETAS KPIs
   document.getElementById('vpKpis').innerHTML = `
@@ -637,6 +743,7 @@ export function renderVistaPlanta() {
     return `
       <tr class="${nivelFinal.rowBg}">
         <td class="text-center font-black text-slate-500">${i + 1}</td>
+        <td class="text-center text-slate-600">${esc(f.lineaNombre || '—')}</td>
         <td><b>${esc(f.equipo)}</b></td>
         <td class="text-center"><span class="badge ${nivelP.badge}">${f.mins} min</span></td>
         <td class="text-center"><span class="badge ${nivelV.badge}">${f.vacio} min</span></td>
@@ -644,19 +751,20 @@ export function renderVistaPlanta() {
         <td class="text-slate-600 text-xs">${esc(f.observaciones || '—')}</td>
         <td class="text-center"><span class="badge ${nivelFinal.badge}">${nivelFinal.label}</span></td>
       </tr>`;
-  }).join('') : '<tr><td colspan="7" class="text-center text-slate-500 p-3 italic">No hay paradas registradas en este turno.</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="text-center text-slate-500 p-3 italic">No hay paradas registradas en este turno.</td></tr>';
 
   document.getElementById('tablaMapaDefectos').innerHTML = defectosOrdenados.length ? defectosOrdenados.map((x, i) => {
     const nivel = nivelPorValor(x.porcentaje, UMBRAL_DEFECTO);
     return `
       <tr class="${nivel.rowBg}">
         <td class="text-center font-black text-slate-500">${i + 1}</td>
+        <td class="text-center text-slate-600">${esc(nombreLinea(x.linea))}</td>
         <td><b>${esc(x.nombre)}</b></td>
         <td class="text-center"><span class="badge ${nivel.badge}">${x.porcentaje}%</span></td>
         <td>${esc(x.accion || '—')}</td>
         <td class="text-center"><span class="badge ${nivel.badge}">${nivel.label}</span></td>
       </tr>`;
-  }).join('') : '<tr><td colspan="5" class="text-center text-slate-500 p-3 italic">No hay defectos de calidad registrados en este turno.</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="text-center text-slate-500 p-3 italic">No hay defectos de calidad registrados en este turno.</td></tr>';
 
   // Top motivos de parada - COMENTADO: tarjeta eliminada del HTML
   // const causasScope = {};
@@ -714,8 +822,8 @@ export function renderVistaPlanta() {
   document.getElementById('vpNotaTurno').value = s.notaTurno || '';
   document.getElementById('vpSupervisorNombre').textContent = s.supervisor || 'No asignado';
 
-  // Renderizar gráficos de calidad
-  renderizarGraficosCalidad(l, lineasIter, s);
+  // Renderizar gráficos de calidad (modo turno u día de 24 h)
+  renderizarGraficosCalidad(l, lineasIter, s, { esModoDia, sesionesDia });
   
   // Renderizar gráfico de evolución de defectos
   renderizarGraficoEvolucionDefectos(l, defectosScope, s);
@@ -725,14 +833,38 @@ export function renderVistaPlanta() {
  * Renderiza los gráficos de evolución de calidad global y parcial.
  * Se llama desde renderVistaPlanta() para mostrar la evolución hora a hora.
  */
-function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s) {
+function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s, opciones = {}) {
   try {
-    // Obtener los datos de calidad de todas las líneas activas
+    const { esModoDia = false, sesionesDia = [] } = opciones;
+
+    // Construye el objeto "objetivos" que alimenta el gráfico para una línea.
+    // - Modo turno: usa las lecturas de calidad de la sesión actual.
+    // - Modo día: concatena las lecturas de los 3 turnos en una sola serie de
+    //   24 h, ordenadas por la jornada administrativa (05:00 → 05:00), para
+    //   ver la evolución continua del día.
+    const objetivosParaLinea = (lc) => {
+      if (!esModoDia) return s.objetivos?.porLinea?.[lc.id];
+
+      const objBase = s.objetivos?.porLinea?.[lc.id] || {};
+      // Ordenar por turno (Mañana→Tarde→Noche) y, dentro de cada turno, por
+      // los minutos transcurridos desde su inicio.
+      const ordTurno = { 'Mañana': 0, 'Tarde': 1, 'Noche': 2 };
+      const conTurno = [];
+      sesionesDia.forEach(({ turno: turnoSes, sesion: ses }) => {
+        const o = ses.objetivos?.porLinea?.[lc.id];
+        (o?.lecturasCalidad || []).forEach(lec => {
+          if (!lec || !lec.hora) return;
+          if (lec.global === null && lec.parcial === null) return;
+          conTurno.push({ hora: lec.hora, global: lec.global, parcial: lec.parcial, _t: ordTurno[turnoSes] ?? 9, _m: minutosDesdeInicioTurno(lec.hora, turnoSes) ?? 0 });
+        });
+      });
+      conTurno.sort((a, b) => (a._t - b._t) || (a._m - b._m));
+
+      return { ...objBase, lecturasCalidad: conTurno };
+    };
+
     const lineasConDatos = lineasIter
-      .map(lc => ({ 
-        linea: lc, 
-        objetivos: s.objetivos?.porLinea?.[lc.id] 
-      }))
+      .map(lc => ({ linea: lc, objetivos: objetivosParaLinea(lc) }))
       .filter(x => x.objetivos && Array.isArray(x.objetivos.lecturasCalidad) && x.objetivos.lecturasCalidad.length > 0);
 
     // Si la línea seleccionada es TODAS, agregar datos de todas las líneas
@@ -762,21 +894,14 @@ function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s) {
       return;
     }
 
-    // Preparar datos para gráfico global
-    renderizarGraficoCalidad(
-      'chartCalidadGlobal',
-      'global',
-      lineasAMostrar,
-      s
-    );
+    // Gráfico de calidad global (en modo día es la evolución de 24 h).
+    renderizarGraficoCalidad('chartCalidadGlobal', 'global', lineasAMostrar, s);
 
-    // Preparar datos para gráfico parcial
-    renderizarGraficoCalidad(
-      'chartCalidadParcial',
-      'parcial',
-      lineasAMostrar,
-      s
-    );
+    // El gráfico de calidad parcial solo se dibuja en modo turno (en modo día
+    // el panel está oculto y el global ocupa todo el ancho).
+    if (!esModoDia) {
+      renderizarGraficoCalidad('chartCalidadParcial', 'parcial', lineasAMostrar, s);
+    }
   } catch (error) {
     console.error('Error al renderizar gráficos de calidad:', error);
   }
@@ -1591,3 +1716,4 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
 // cambiarAreaMonitoreada: llamada desde onchange="..." en index.html.
 // ==========================================================
 window.cambiarAreaMonitoreada = cambiarAreaMonitoreada;
+window.cambiarPeriodoVista = cambiarPeriodoVista;

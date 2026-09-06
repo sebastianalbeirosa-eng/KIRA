@@ -12,7 +12,7 @@
 */
 
 // Clave bajo la cual se guarda toda la base de datos de KIRA en localStorage
-export const STORAGE_KEY = 'kira_produccion_v2.0';
+export const STORAGE_KEY = 'kira_produccion_v3.0';
 
 /**
  * Carga la base de datos completa desde localStorage.

@@ -203,15 +203,11 @@ export function asegurarObjetivosSesion(s) {
       s.objetivos.porLinea[l.id] = {
         calidad: 90, produccion: 0, vacioMax: 30,
         rendimientoObj: 0, realCalidad: 0, realProd: 0,
-        // Eventos de producción del turno. El primero (tipo 'inicial') es el
-        // producto con el que arranca el turno; los siguientes son cambios
-        // ('producto' o 'ciclo'). De acá salen el objetivo dinámico y los
-        // quiebres del gráfico de calidad.
-        eventosProduccion: [{ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 }],
-        // Tomas reales de m² quemados: SOLO hora + valor. El formato/ciclo con
-        // que se evalúa cada toma se deduce del evento vigente a esa hora.
+        // Tomas reales de m² quemados (POR TURNO): SOLO hora + valor. El
+        // formato/ciclo con que se evalúa cada toma se deduce de los eventos
+        // de producción del DÍA (db.produccionDia), no de acá.
         lecturasQuemado: Array(3).fill(null).map(() => ({ hora: '', real: 0 })),
-        // Objetivo dinámico de m²/turno, calculado a partir de los eventos.
+        // Objetivo dinámico de m²/turno, calculado a partir de los eventos del día.
         produccionProyectada: 0
       };
     } else {
@@ -219,25 +215,6 @@ export function asegurarObjetivosSesion(s) {
       if (typeof o.rendimientoObj !== 'number') o.rendimientoObj = 0;
       if (!Array.isArray(o.lecturasCalidad)) {
         o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
-      }
-
-      // Migración de eventos de producción. Si no existen, intentamos
-      // reconstruirlos desde el formato viejo de lecturasQuemado (que traía
-      // producto/formato/ciclo por toma) para no perder datos cargados.
-      if (!Array.isArray(o.eventosProduccion) || o.eventosProduccion.length === 0) {
-        const viejas = Array.isArray(o.lecturasQuemado) ? o.lecturasQuemado : [];
-        const conDatos = viejas.filter(t => t && (t.producto || t.formatoId || t.ciclo));
-        if (conDatos.length) {
-          o.eventosProduccion = conDatos.map((t, i) => ({
-            tipo: i === 0 ? 'inicial' : 'producto',
-            hora: t.hora || '',
-            producto: t.producto || '',
-            formatoId: t.formatoId || '',
-            ciclo: Number(t.ciclo) || 0
-          }));
-        } else {
-          o.eventosProduccion = [{ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 }];
-        }
       }
 
       // lecturasQuemado se normaliza a solo {hora, real}.
@@ -251,6 +228,8 @@ export function asegurarObjetivosSesion(s) {
       }
 
       if (typeof o.produccionProyectada !== 'number') o.produccionProyectada = 0;
+      // NOTA: o.eventosProduccion (modelo viejo por turno) se conserva si
+      // existe en storage, para que eventosProduccionDia() pueda migrarlo.
     }
   });
 }
@@ -267,6 +246,73 @@ export function formatosHornoGuardados() {
 /** Persiste el catálogo de formatos de horno en la base. */
 export function guardarFormatosHorno(lista) {
   db.formatosHorno = Array.isArray(lista) ? lista : [];
+  persistir();
+}
+
+/* ==========================================================
+   PRODUCCIÓN CONTINUA DEL DÍA (eventos de producto/ciclo)
+   ----------------------------------------------------------
+   La producción del horno es un proceso continuo de 24 h: el producto y el
+   ciclo que corren no se reinician al cambiar de turno. Por eso los eventos
+   de producción (producto inicial + cambios de producto/ciclo) viven a NIVEL
+   DEL DÍA y por línea, compartidos por los 3 turnos de esa fecha:
+
+       db.produccionDia[fecha][lineaId] = [ {tipo, hora, producto, formatoId, ciclo}, ... ]
+
+   Así el operario solo carga cambios cuando realmente ocurren; el producto
+   vigente lo hereda del último evento del día, sin recargarlo cada turno.
+   ========================================================== */
+
+/**
+ * Devuelve la lista de eventos de producción del día para una línea.
+ * Si nunca se cargó nada, migra automáticamente desde los eventos que
+ * hubiera guardados por turno en las sesiones de esa fecha (modelo viejo),
+ * para no perder datos ya cargados.
+ * @param {string} lineaId
+ * @param {string} fecha  fecha administrativa del día (por defecto la seleccionada)
+ */
+export function eventosProduccionDia(lineaId, fecha = valor('fecha')) {
+  if (!db.produccionDia) db.produccionDia = {};
+  if (!db.produccionDia[fecha]) db.produccionDia[fecha] = {};
+
+  if (!Array.isArray(db.produccionDia[fecha][lineaId])) {
+    // Migración: juntar los eventos que pudieran existir en las 3 sesiones
+    // (turnos) de esta fecha para esta línea, deduplicando por hora.
+    const migrados = [];
+    const vistos = new Set();
+    Object.entries(db.sesiones || {}).forEach(([key, s]) => {
+      if (!key.startsWith(fecha + '|')) return;
+      const evs = s.objetivos?.porLinea?.[lineaId]?.eventosProduccion;
+      if (!Array.isArray(evs)) return;
+      evs.forEach(ev => {
+        if (!ev || (!ev.producto && !ev.formatoId && !ev.ciclo)) return;
+        const clave = `${ev.hora}|${ev.producto}|${ev.formatoId}|${ev.ciclo}`;
+        if (vistos.has(clave)) return;
+        vistos.add(clave);
+        migrados.push({
+          tipo: ev.tipo || 'producto',
+          hora: ev.hora || '',
+          producto: ev.producto || '',
+          formatoId: ev.formatoId || '',
+          ciclo: Number(ev.ciclo) || 0
+        });
+      });
+    });
+    migrados.sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+    // Si el primero no es 'inicial', marcarlo como tal (arranque del día).
+    if (migrados.length) migrados[0].tipo = 'inicial';
+    else migrados.push({ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 });
+    db.produccionDia[fecha][lineaId] = migrados;
+  }
+
+  return db.produccionDia[fecha][lineaId];
+}
+
+/** Guarda la lista de eventos de producción del día para una línea. */
+export function guardarEventosProduccionDia(lineaId, eventos, fecha = valor('fecha')) {
+  if (!db.produccionDia) db.produccionDia = {};
+  if (!db.produccionDia[fecha]) db.produccionDia[fecha] = {};
+  db.produccionDia[fecha][lineaId] = Array.isArray(eventos) ? eventos : [];
   persistir();
 }
 

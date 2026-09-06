@@ -152,17 +152,15 @@
             <button class="btn px-4 py-2 text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="imprimirVista()">Imprimir</button>
             <button class="btn px-4 py-2 text-sm bg-rose-600 text-white hover:bg-rose-700" onclick="generarAsakai()">Reporte ASAKAI (PDF)</button>
             <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700" onclick="guardarExcel()">Guardar turno / Excel</button>
-            <!-- BOTÓN: Borrar pantalla para el nuevo turno -->
-             <button class="btn px-4 py-2 text-sm bg-slate-700 text-white hover:bg-slate-800" onclick="solicitarBorrarPantalla()">Borrar pantalla</button>
           </div>
         </div>
         <!-- Panel de control de sesión operativa (Restaurado y visible) -->
-        <div class="panel px-2 py-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="panel px-2 py-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
           <label class="text-[11px] uppercase font-black text-slate-500">Fecha operativa
             <input id="fecha" type="date" class="field mt-1" onchange="cambiarSesion()">
           </label>
           <label class="text-[11px] uppercase font-black text-slate-500">Turno
-            <select id="turno" class="field mt-1" onchange="cambiarSesion()">
+            <select id="turno" class="field mt-1" onchange="cambiarTurno()">
               <option value="Mañana">Mañana</option>
               <option value="Tarde">Tarde</option>
               <option value="Noche">Noche</option>
@@ -172,8 +170,12 @@
             <input id="supervisor" class="field mt-1" placeholder="Nombre y apellido" oninput="guardarMeta()">
           </label>
           <label class="text-[11px] uppercase font-black text-slate-500">Área monitoreada
-            <select id="lineaVista" class="field mt-1" onchange="cambiarAreaMonitoreada()">
-              <option value="TODAS">Todas las líneas</option>
+            <select id="lineaVista" class="field mt-1" onchange="cambiarAreaMonitoreada()"></select>
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500">Período
+            <select id="periodoVista" class="field mt-1" onchange="cambiarPeriodoVista(this.value)">
+              <option value="turno">Turno actual</option>
+              <option value="dia">Día completo (24 h)</option>
             </select>
           </label>
         </div>
@@ -205,10 +207,10 @@
   <div class="space-y-3">
 
     <!-- GRAFICOS DE EVOLUCION HORA A HORA DE CALIDAD GLOBAL Y PARCIAL -->
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-      <div class="panel p-3">
+    <div id="gridCalidad" class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div id="panelCalidadGlobal" class="panel p-3">
         <h2 class="font-black text-slate-700 uppercase text-sm mb-2 flex items-center justify-between">
-          <span>Evolución hora a hora — Calidad Global</span>
+          <span id="tituloCalidadGlobal">Evolución hora a hora — Calidad Global</span>
           <span class="text-[10px] font-normal text-slate-400 normal-case">(Objetivo vs Real)</span>
         </h2>
         <div class="h-64 relative">
@@ -216,7 +218,7 @@
         </div>
       </div>
 
-      <div id="panelEvolucionDefectos" class="panel p-3">
+      <div id="panelCalidadParcial" class="panel p-3">
         <h2 class="font-black text-slate-700 uppercase text-sm mb-2 flex items-center justify-between">
           <span>Evolución hora a hora — Calidad Parcial</span>
           <span class="text-[10px] font-normal text-slate-400 normal-case">(Objetivo vs Real)</span>
@@ -246,6 +248,7 @@
           <thead>
             <tr>
               <th class="text-center w-12">#</th>
+              <th class="text-center w-24">Línea</th>
               <th class="text-left w-44">Defecto</th>
               <th class="text-center w-24">%</th>
               <th class="text-left w-56">Acción correctiva</th>
@@ -280,12 +283,13 @@
           <thead>
             <tr>
               <th class="text-center" style="width: 3%">#</th>
+              <th class="text-center" style="width: 8%">Línea</th>
               <th class="text-left" style="width: 15%">Máquina / Equipo</th>
-              <th class="text-center" style="width: 10%">Min. parada</th>
-              <th class="text-center" style="width: 10%">Min. vacío</th>
-              <th class="text-left" style="width: 25%; padding-left: 1.5rem">Motivo principal</th>
-              <th class="text-left" style="width: 27%">Observaciones</th>
-              <th class="text-center" style="width: 10%">Nivel crítico</th>
+              <th class="text-center" style="width: 9%">Min. parada</th>
+              <th class="text-center" style="width: 9%">Min. vacío</th>
+              <th class="text-left" style="width: 23%; padding-left: 1.5rem">Motivo principal</th>
+              <th class="text-left" style="width: 24%">Observaciones</th>
+              <th class="text-center" style="width: 9%">Nivel crítico</th>
             </tr>
           </thead>
           <tbody id="tablaMapaMaquinas"></tbody>

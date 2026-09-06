@@ -21,8 +21,8 @@ Rol:         Supervisor
 ---------------------
 OPERARIO
 ---------------------
-Usuario:     operario
-Contraseña:  oper123
+Usuario:     Marcelo
+Contraseña:  Marce123
 Rol:         Operario
 
 ========================================

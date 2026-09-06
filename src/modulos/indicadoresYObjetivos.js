@@ -12,7 +12,8 @@ import { persistir } from '../nucleo/almacenamiento.js';
 import { abrir, cerrar, esc } from '../nucleo/utilidades.js';
 import {
   sesion, lineasActivas, asegurarObjetivosSesion,
-  formatosHornoGuardados, guardarFormatosHorno
+  formatosHornoGuardados, guardarFormatosHorno,
+  eventosProduccionDia, guardarEventosProduccionDia
 } from '../nucleo/estado.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import { renderTodo, renderVistaPlanta } from './vistaDePlanta.js';
@@ -25,6 +26,27 @@ import {
 // que haya guardado el usuario (formatos personalizados persistidos).
 const formatosPersistidos = formatosHornoGuardados();
 if (formatosPersistidos) fijarCatalogoFormatos(formatosPersistidos);
+
+// Línea (pestaña) actualmente visible dentro del modal de objetivos.
+let tabLineaActiva = '';
+
+/**
+ * Muestra la sección de objetivos de una sola línea (pestaña) y oculta el
+ * resto. No re-renderiza el modal (así no se pierde lo que se está tipeando
+ * en la línea activa); solo alterna visibilidad y el estilo de las pestañas.
+ */
+function seleccionarTabLinea(lineaId) {
+  tabLineaActiva = lineaId;
+  document.querySelectorAll('#objetivosLineasContainer [data-tab-panel]').forEach(panel => {
+    panel.classList.toggle('hidden', panel.getAttribute('data-tab-panel') !== lineaId);
+  });
+  document.querySelectorAll('#objTabsBar [data-tab-linea]').forEach(btn => {
+    const activa = btn.getAttribute('data-tab-linea') === lineaId;
+    btn.classList.toggle('bg-white', activa);
+    btn.classList.toggle('text-slate-400', !activa);
+    btn.classList.toggle('border-transparent', !activa);
+  });
+}
 
 /** Opciones <option> de formatos para los selects de cada toma. */
 function opcionesFormato(seleccionado) {
@@ -109,20 +131,41 @@ export function renderObjetivosModal() {
     Noche: ['22:00', '23:00', '00:00', '01:00', '02:00', '03:00', '04:00', '05:00']
   }[s.turno || 'Mañana'] || ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'];
 
-  document.getElementById('objetivosLineasContainer').innerHTML = lineasActivas().map((l, idx) => {
+  const lineas = lineasActivas();
+
+  // Barra de pestañas: una por línea. Solo se muestra la sección de la línea
+  // activa; el resto queda oculto. Evita un scroll larguísimo con muchas líneas.
+  // Se conserva la pestaña previamente activa si sigue existiendo.
+  const activaPrevia = lineas.some(l => l.id === tabLineaActiva) ? tabLineaActiva : (lineas[0]?.id || '');
+  tabLineaActiva = activaPrevia;
+
+  const barraTabs = lineas.length > 1 ? `
+    <div class="flex flex-wrap gap-1 mb-4 border-b border-slate-200 pb-2" id="objTabsBar">
+      ${lineas.map((l, idx) => {
+        const pal = paletas[idx % paletas.length];
+        const activa = l.id === tabLineaActiva;
+        return `<button type="button" onclick="seleccionarTabLinea('${l.id}')"
+          class="tab-obj px-3 py-1.5 text-xs font-black rounded-t border-b-2 transition ${activa
+            ? `${pal.texto} ${pal.borde} bg-white`
+            : 'text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-100'}"
+          data-tab-linea="${l.id}">${esc(l.nombre)}</button>`;
+      }).join('')}
+    </div>` : '';
+
+  document.getElementById('objetivosLineasContainer').innerHTML = barraTabs + lineas.map((l, idx) => {
     const p = paletas[idx % paletas.length];
     const o = s.objetivos.porLinea[l.id];
     const lecturas = (Array.isArray(o.lecturasQuemado) && o.lecturasQuemado.length)
       ? o.lecturasQuemado
       : [{ hora: '', real: 0 }, { hora: '', real: 0 }, { hora: '', real: 0 }];
-    const eventos = (Array.isArray(o.eventosProduccion) && o.eventosProduccion.length)
-      ? o.eventosProduccion
-      : [{ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 }];
+    // Eventos de producción del DÍA (compartidos por los 3 turnos de la fecha).
+    const eventos = eventosProduccionDia(l.id);
     const lecturasCal = (o.lecturasCalidad && o.lecturasCalidad.length === 8)
       ? o.lecturasCalidad
       : Array(8).fill(null).map((_, i) => ({ hora: defaultHoras[i], global: null, parcial: null }));
 
-    return `<div class="obj-section p-4 bg-slate-50 border border-slate-200 rounded mb-4">
+    const ocultaTab = (lineas.length > 1 && l.id !== tabLineaActiva) ? 'hidden' : '';
+    return `<div class="obj-section obj-tab-panel ${ocultaTab} p-4 bg-slate-50 border border-slate-200 rounded mb-4" data-tab-panel="${l.id}">
       <h4 class="font-bold ${p.texto} border-b-2 border-slate-300 pb-2 mb-4 text-base">${l.nombre} — Objetivos vs Real del Turno</h4>
 
       <!-- SECCIÓN 1: CALIDAD -->
@@ -358,8 +401,9 @@ export function guardarObjetivos() {
 
     o.realProd = parseFloat(document.getElementById(`realProd_${l.id}`)?.value) || 0;
 
-    // Eventos de producción (producto inicial + cambios) leídos del DOM.
-    o.eventosProduccion = leerEventosDom(l.id, o.eventosProduccion);
+    // Eventos de producción del DÍA (producto inicial + cambios) leídos del DOM.
+    const eventosDia = leerEventosDom(l.id, eventosProduccionDia(l.id));
+    guardarEventosProduccionDia(l.id, eventosDia);
 
     // Tomas de m² reales: solo hora + valor.
     o.lecturasQuemado = [0, 1, 2].map(i => ({
@@ -367,8 +411,8 @@ export function guardarObjetivos() {
       real: parseFloat(document.getElementById(`quemadoReal_${l.id}_${i}`)?.value) || 0
     }));
 
-    // Objetivo dinámico y quiebres a partir de los eventos.
-    const tramos = tramosDeEventos(o.eventosProduccion);
+    // Objetivo dinámico y quiebres a partir de los eventos del día.
+    const tramos = tramosDeEventos(eventosDia);
     const proy = proyectarProduccionTurno(tramos, s.turno || 'Mañana');
     o.produccionProyectada = Math.round(proy.totalProyectado);
     o.quiebresProducto = proy.quiebres;
@@ -491,7 +535,7 @@ function recalcularProyeccion(lineaId) {
   const turno = s.turno || 'Mañana';
   const o = s.objetivos?.porLinea?.[lineaId];
 
-  const eventos = leerEventosDom(lineaId, o?.eventosProduccion);
+  const eventos = leerEventosDom(lineaId, eventosProduccionDia(lineaId));
   const tramos = tramosDeEventos(eventos);
 
   // Ritmo (m²/h) de cada evento.
@@ -571,10 +615,9 @@ function recalcularProyeccion(lineaId) {
  * Persiste primero lo cargado en el DOM para no perderlo al re-renderizar.
  */
 function agregarEventoProduccion(lineaId, tipo) {
-  const s = sesion();
-  const o = s.objetivos.porLinea[lineaId];
-  o.eventosProduccion = leerEventosDom(lineaId, o.eventosProduccion);
-  o.eventosProduccion.push({ tipo, hora: '', producto: '', formatoId: '', ciclo: 0 });
+  const eventos = leerEventosDom(lineaId, eventosProduccionDia(lineaId));
+  eventos.push({ tipo, hora: '', producto: '', formatoId: '', ciclo: 0 });
+  guardarEventosProduccionDia(lineaId, eventos);
   renderObjetivosModal();
   recalcularProyeccion(lineaId);
 }
@@ -582,10 +625,9 @@ function agregarEventoProduccion(lineaId, tipo) {
 /** Quita el evento en la posición dada (nunca el inicial, índice 0). */
 function quitarEventoProduccion(lineaId, indice) {
   if (indice <= 0) return;
-  const s = sesion();
-  const o = s.objetivos.porLinea[lineaId];
-  o.eventosProduccion = leerEventosDom(lineaId, o.eventosProduccion);
-  o.eventosProduccion.splice(indice, 1);
+  const eventos = leerEventosDom(lineaId, eventosProduccionDia(lineaId));
+  eventos.splice(indice, 1);
+  guardarEventosProduccionDia(lineaId, eventos);
   renderObjetivosModal();
   recalcularProyeccion(lineaId);
 }
@@ -629,3 +671,4 @@ window.recalcularProyeccion = recalcularProyeccion;
 window.abrirGestorFormatos = abrirGestorFormatos;
 window.agregarEventoProduccion = agregarEventoProduccion;
 window.quitarEventoProduccion = quitarEventoProduccion;
+window.seleccionarTabLinea = seleccionarTabLinea;

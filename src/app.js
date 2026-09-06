@@ -34,7 +34,7 @@ import { renderTodo, renderVistaPlanta } from './modulos/vistaDePlanta.js';
 import { renderAnalisis } from './modulos/graficosYAnalisis.js';
 import { renderHistorico } from './modulos/historicos.js';
 import { renderConstructor } from './modulos/constructorPlanta.js';
-import { determinarTurnoAutomatico } from './modulos/gestionTurno.js';
+import { determinarTurnoAutomatico, detectarNuevoTurno } from './modulos/gestionTurno.js';
 
 // ==========================================================
 // GESTIÓN DE SESIÓN DE USUARIO
@@ -178,6 +178,16 @@ export function cambiarSesion() {
   if (!document.getElementById('vistaPlanta').classList.contains('hidden')) renderVistaPlanta();
 }
 
+/**
+ * Se dispara al cambiar el TURNO en el header. Refresca la sesión (igual que
+ * cambiarSesion) y, además, avisa "Nuevo turno detectado", ofreciendo empezar
+ * limpio si ese turno ya tenía datos cargados.
+ */
+export function cambiarTurno() {
+  cambiarSesion();
+  detectarNuevoTurno(valor('fecha'), valor('turno'));
+}
+
 /** Guarda el nombre del supervisor cargado en el header operativo. */
 export function guardarMeta() {
   const s = sesion();
@@ -214,10 +224,13 @@ export function refrescarSelectoresLineas() {
   const opciones = activas.map(l => `<option value="${esc(l.id)}">${esc(l.nombre)}</option>`).join('');
 
   const vista = document.getElementById('lineaVista');
-  const vistaAnterior = vista?.value || 'TODAS';
+  const vistaAnterior = vista?.value || '';
   if (vista) {
-    vista.innerHTML = `<option value="TODAS">Todas las líneas</option>${opciones}`;
-    vista.value = vistaAnterior === 'TODAS' || activas.some(l => l.id === vistaAnterior) ? vistaAnterior : 'TODAS';
+    // Sin opción "Todas las líneas": se debe elegir una línea concreta para
+    // no mezclar fechas/turnos de líneas distintas en los gráficos.
+    vista.innerHTML = opciones;
+    // Conservar la línea previa si sigue activa; si no, seleccionar la primera.
+    vista.value = activas.some(l => l.id === vistaAnterior) ? vistaAnterior : (activas[0]?.id || '');
   }
 
   const historico = document.getElementById('histLinea');
@@ -281,5 +294,6 @@ window.addEventListener('load', () => {
 // ==========================================================
 window.mostrarTab = mostrarTab;
 window.cambiarSesion = cambiarSesion;
+window.cambiarTurno = cambiarTurno;
 window.guardarMeta = guardarMeta;
 window.alternarSidebar = alternarSidebar;

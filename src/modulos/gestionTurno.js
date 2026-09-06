@@ -1,17 +1,19 @@
 /* ========================================================== */
-/* GESTION-TURNO.JS — Turno automático y borrado seguro        */
+/* GESTION-TURNO.JS — Turno automático y arranque de turno     */
 /* ========================================================== */
 /*
-  Dos responsabilidades chicas pero importantes: determinar qué
-  turno corresponde según la hora del día, y el flujo de "borrado
-  seguro de pantalla" al iniciar un turno nuevo (los datos del
-  turno anterior ya están guardados en el histórico, esto solo
-  limpia lo que se ve en pantalla).
+  Dos responsabilidades: determinar qué turno corresponde según
+  la hora del día, y el flujo de "nuevo turno" al seleccionar un
+  turno en el header. Cada combinación fecha|turno es una sesión
+  independiente, así que seleccionar un turno ya lleva a su propia
+  sesión; acá solo avisamos al operario y, si ese turno ya tenía
+  datos, le damos la opción de continuar o empezar limpio (sin
+  borrados involuntarios).
 */
 
 import { persistir } from '../nucleo/almacenamiento.js';
 import { valor } from '../nucleo/utilidades.js';
-import { sesion } from '../nucleo/estado.js';
+import { sesion, lineasActivas } from '../nucleo/estado.js';
 import { mostrarConfirmacionKira, mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import { renderTodo } from './vistaDePlanta.js';
 
@@ -24,47 +26,83 @@ export function determinarTurnoAutomatico() {
 }
 
 /**
- * Pide confirmación y, si se acepta, limpia la pantalla operativa para
- * arrancar un turno nuevo. Los registros del turno anterior NO se pierden:
- * ya están guardados en el histórico bajo su propia clave fecha|turno.
+ * Indica si una sesión ya tiene datos operativos cargados (paradas, acciones,
+ * defectos, supervisor, nota de turno, o lecturas de calidad/quemado).
  */
-export function solicitarBorrarPantalla() {
-  const fechaActual = valor('fecha');
-  const turnoActual = valor('turno');
+function sesionTieneDatos(s) {
+  if (!s) return false;
+  if ((s.paradas || []).length) return true;
+  if ((s.acciones || []).length) return true;
+  if ((s.defectos || []).length) return true;
+  if ((s.supervisor || '').trim()) return true;
+  if ((s.notaTurno || '').trim()) return true;
+  const objs = s.objetivos?.porLinea || {};
+  return Object.values(objs).some(o => {
+    const cal = (o.lecturasCalidad || []).some(x => x && (x.global !== null || x.parcial !== null));
+    const quem = (o.lecturasQuemado || []).some(x => x && x.real > 0);
+    return cal || quem;
+  });
+}
 
-  const mensaje = `¿Desea limpiar la pantalla operativa para el ingreso de un nuevo turno?\n\nLos registros actuales del turno "${turnoActual}" (${fechaActual}) ya se encuentran guardados de forma segura en el Histórico y no se perderán.`;
+/** Limpia los datos operativos de la sesión actual en pantalla (no toca el histórico). */
+function limpiarSesionActual() {
+  const s = sesion();
+  s.paradas = [];
+  s.acciones = [];
+  s.defectos = [];
+  s.supervisor = '';
+  s.notaTurno = '';
+  // Reiniciar lecturas de calidad/quemado por línea (los objetivos numéricos
+  // se conservan; solo se limpian las lecturas reales del turno).
+  const objs = s.objetivos?.porLinea || {};
+  Object.values(objs).forEach(o => {
+    o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
+    o.lecturasQuemado = Array(3).fill(null).map(() => ({ hora: '', real: 0 }));
+    o.realCalidad = 0;
+    o.calidadParcial = 0;
+    o.horaCalidadParcial = '';
+    o.realProd = 0;
+  });
+  s.actualizada = new Date().toISOString();
+  persistir();
+  renderTodo();
+}
 
+/**
+ * Se invoca al seleccionar un turno en el header. Avisa "Nuevo turno
+ * detectado" y, si la sesión de ese turno ya trae datos, ofrece continuar
+ * con ellos o empezar limpio. Si está vacía, solo muestra un aviso.
+ * @param {string} fecha
+ * @param {string} turno
+ */
+export function detectarNuevoTurno(fecha, turno) {
+  const s = sesion();
+
+  if (!sesionTieneDatos(s)) {
+    mostrarAlertaKira(
+      `Turno ${turno} (${fecha}) listo para el registro. La producción del horno se hereda del día; cargá solo los cambios y tus tomas.`,
+      'Nuevo Turno Detectado',
+      'info'
+    );
+    return;
+  }
+
+  // El turno ya tiene datos: preguntar antes de borrar nada.
+  // "Empezar limpio" vacía la pantalla; "Cancelar" continúa con los datos.
   mostrarConfirmacionKira(
-    mensaje,
-    "Restablecer Pantalla de Turno",
+    `El turno ${turno} (${fecha}) ya tiene registros cargados.\n\nElegí "Empezar limpio" para vaciar la pantalla y cargar un turno nuevo, o "Cancelar" para continuar con los datos actuales.\n\n(Lo ya guardado permanece en el Histórico; "Empezar limpio" solo vacía la pantalla de este turno.)`,
+    'Nuevo Turno Detectado',
     () => {
-      // 1. Asegurar la persistencia del turno previo
-      persistir();
-
-      // 2. Limpiar la sesión actual en pantalla
-      const s = sesion();
-      s.paradas = [];
-      s.acciones = [];
-      s.defectos = [];
-      s.supervisor = '';
-      s.notaTurno = '';
-      s.actualizada = new Date().toISOString();
-
-      persistir();
-      renderTodo();
-
-      // 3. Notificación de éxito en modal KIRA
-      mostrarAlertaKira('Pantalla restablecida con éxito. El sistema está listo para el registro del nuevo turno.', 'Nuevo Turno', 'exito');
+      limpiarSesionActual();
+      mostrarAlertaKira('Pantalla restablecida. Listo para el registro del nuevo turno.', 'Nuevo Turno', 'exito');
     },
-    "Sí, Borrar Pantalla"
+    'Empezar limpio'
   );
 }
 
 // ==========================================================
 // EXPOSICIÓN A window
 // ----------------------------------------------------------
-// solicitarBorrarPantalla: se llama desde onclick="..." en
-// index.html (botón "Nuevo Turno"). determinarTurnoAutomatico
-// se usa internamente desde app.js, no necesita ir a window.
+// detectarNuevoTurno se llama desde app.js (cambiarSesion), no
+// directamente desde el HTML, así que no necesita ir a window.
 // ==========================================================
-window.solicitarBorrarPantalla = solicitarBorrarPantalla;

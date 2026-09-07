@@ -116,9 +116,11 @@ export function defectosAnalisis() {
 
 /** Calcula las métricas agregadas (parada, vacío, eventos, disponibilidad) para un set de registros dado. */
 export function metricas(regs = datosVista(), minutosPeriodo = TURNO_MIN) {
-  const parada = regs.reduce((a, x) => a + x.minutos, 0);
-  const vacio = regs.reduce((a, x) => a + x.vacio, 0);
-  const eventos = regs.reduce((a, x) => a + x.eventos, 0);
+  // Se usan "|| 0" por si un registro histórico viejo no trae vacio/eventos
+  // (evita que un undefined convierta la suma en NaN y rompa disponibilidad/EGE).
+  const parada = regs.reduce((a, x) => a + (x.minutos || 0), 0);
+  const vacio = regs.reduce((a, x) => a + (x.vacio || 0), 0);
+  const eventos = regs.reduce((a, x) => a + (x.eventos || 0), 0);
   const disponibilidad = Math.max(0, 100 - (parada / minutosPeriodo * 100));
   const i = sesion().indicadores;
   return { parada, vacio, eventos, disponibilidad, productivos: Math.max(0, minutosPeriodo - parada), calidad: i.calidad, productividad: i.productividad };
@@ -1583,6 +1585,31 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
     const objetivoDefectos = s.objetivos?.porLinea?.[lineaUsada]?.defectosMax || 8;
     console.log('Objetivo de defectos:', objetivoDefectos);
 
+    // RANGO DEL EJE Y: el gráfico se ajusta a los DATOS (los defectos ocupan
+    // bien el alto, con 10% de margen arriba y abajo), pero SIEMPRE se
+    // garantiza que la línea de objetivo quede visible dentro del rango,
+    // aunque todos los defectos estén por encima (o por debajo) del objetivo.
+    const valoresDef = datasets.flatMap(ds => ds.data.filter(v => v !== null && v !== undefined && !isNaN(v)));
+
+    let yMinDef, yMaxDef;
+    if (valoresDef.length === 0) {
+      // Sin datos: mostrar el objetivo centrado con un pequeño rango.
+      const semi = Math.max(objetivoDefectos * 0.5, 0.5);
+      yMinDef = Math.max(0, objetivoDefectos - semi);
+      yMaxDef = objetivoDefectos + semi;
+    } else {
+      let minVal = Math.min(...valoresDef);
+      let maxVal = Math.max(...valoresDef);
+      // Incluir el objetivo en el rango para que nunca quede fuera de pantalla.
+      minVal = Math.min(minVal, objetivoDefectos);
+      maxVal = Math.max(maxVal, objetivoDefectos);
+      const span = maxVal - minVal;
+      // Margen del 10% del rango (con un piso para no aplastar si span ~ 0).
+      const margen = Math.max(span * 0.10, 0.3);
+      yMinDef = Math.max(0, minVal - margen);
+      yMaxDef = maxVal + margen;
+    }
+
     // Crear gráfico
     window.chartEvolucionDefectosChart = new Chart(canvas, {
       type: 'line',
@@ -1658,25 +1685,9 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
         },
         scales: {
           y: {
-            beginAtZero: false,
-            suggestedMin: function(context) {
-              // Obtener el valor mínimo de todos los datasets
-              const allData = context.chart.data.datasets.flatMap(ds => ds.data.filter(v => v !== null));
-              if (allData.length === 0) return 0;
-              const minVal = Math.min(...allData);
-              // Aplicar margen del 2%
-              const margen = minVal * 0.02;
-              return Math.max(0, minVal - margen);
-            },
-            suggestedMax: function(context) {
-              // Obtener el valor máximo de todos los datasets y el objetivo
-              const allData = context.chart.data.datasets.flatMap(ds => ds.data.filter(v => v !== null));
-              if (allData.length === 0) return objetivoDefectos * 1.1;
-              const maxVal = Math.max(...allData, objetivoDefectos);
-              // Aplicar margen del 2%
-              const margen = maxVal * 0.02;
-              return maxVal + margen;
-            },
+            // Rango centrado en el objetivo (queda en el medio del gráfico).
+            min: yMinDef,
+            max: yMaxDef,
             ticks: {
               callback: (value) => value.toFixed(1) + '%',
               font: { size: 11 }

@@ -542,6 +542,26 @@ export function equipoConMasVacio(lineaFiltro = 'TODAS') {
   return [...kpis.filasMaquinas].sort((a, b) => b.vacio - a.vacio)[0];
 }
 
+/**
+ * Devuelve el equipo con MENOS minutos de parada en el turno actual, ENTRE los
+ * que tuvieron al menos una parada (los equipos sin paradas no se registran,
+ * así que "el que menos paró" se interpreta como el menor tiempo perdido de
+ * los que efectivamente pararon). Null si no hay paradas.
+ */
+export function equipoConMenosParada(lineaFiltro = 'TODAS') {
+  const kpis = calcularKpisPlanta(lineaFiltro);
+  if (!kpis.filasMaquinas.length) return null;
+  return [...kpis.filasMaquinas].sort((a, b) => a.mins - b.mins)[0];
+}
+
+/** Devuelve el equipo con MENOS minutos de vacío de horno en el turno actual (entre los que tuvieron registros). */
+export function equipoConMenosVacio(lineaFiltro = 'TODAS') {
+  const kpis = calcularKpisPlanta(lineaFiltro);
+  const conVacio = kpis.filasMaquinas.filter(f => f.vacio > 0);
+  if (!conVacio.length) return null;
+  return conVacio.sort((a, b) => a.vacio - b.vacio)[0];
+}
+
 // ==========================================================
 // 7. DEFECTO PRINCIPAL (turno actual vs. período histórico)
 // ==========================================================
@@ -551,12 +571,19 @@ export function defectoPrincipalTurno(lineaFiltro = 'TODAS') {
   return calcularKpisPlanta(lineaFiltro).defectoPreponderante;
 }
 
+/** Devuelve el defecto de MENOR porcentaje del TURNO ACTUAL (el que menos impacta), o null si no hay defectos. */
+export function defectoMenorTurno(lineaFiltro = 'TODAS') {
+  const ordenados = calcularKpisPlanta(lineaFiltro).defectosOrdenados;
+  if (!ordenados || !ordenados.length) return null;
+  return ordenados[ordenados.length - 1]; // el último = menor porcentaje
+}
+
 /**
  * Devuelve el defecto con mayor porcentaje PROMEDIO en los últimos
  * N días (ej. 7 = semana, 30 = mes), agrupando todas las ocurrencias
  * de cada nombre de defecto en ese período.
  */
-export function defectoPrincipalPeriodo(dias, lineaFiltro = 'TODAS') {
+export function defectoPrincipalPeriodo(dias, lineaFiltro = 'TODAS', orden = 'max') {
   const desde = fechaHaceNDias(dias);
   let defectos = todasDefectos().filter(x => x.fecha >= desde);
   if (lineaFiltro !== 'TODAS') defectos = defectos.filter(x => x.linea === lineaFiltro);
@@ -571,7 +598,7 @@ export function defectoPrincipalPeriodo(dias, lineaFiltro = 'TODAS') {
   const [nombre, registros] = Object.entries(grupos).sort((a, b) => {
     const promA = a[1].reduce((s, x) => s + x.porcentaje, 0) / a[1].length;
     const promB = b[1].reduce((s, x) => s + x.porcentaje, 0) / b[1].length;
-    return promB - promA;
+    return orden === 'min' ? promA - promB : promB - promA;
   })[0];
 
   const porcentajePromedio = registros.reduce((s, x) => s + x.porcentaje, 0) / registros.length;
@@ -627,6 +654,22 @@ export function equipoConMasVacioPeriodo(dias, lineaFiltro = 'TODAS') {
   return { equipo, ...datos };
 }
 
+/** Devuelve el equipo con MENOS minutos de parada acumulados en los últimos N días (entre los que pararon). */
+export function equipoConMenosParadaPeriodo(dias, lineaFiltro = 'TODAS') {
+  const entradas = Object.entries(agruparParadasPorEquipoEnPeriodo(dias, lineaFiltro));
+  if (!entradas.length) return null;
+  const [equipo, datos] = entradas.sort((a, b) => a[1].minutos - b[1].minutos)[0];
+  return { equipo, ...datos };
+}
+
+/** Devuelve el equipo con MENOS minutos de vacío acumulados en los últimos N días (entre los que tuvieron vacío). */
+export function equipoConMenosVacioPeriodo(dias, lineaFiltro = 'TODAS') {
+  const entradas = Object.entries(agruparParadasPorEquipoEnPeriodo(dias, lineaFiltro)).filter(([, d]) => d.vacio > 0);
+  if (!entradas.length) return null;
+  const [equipo, datos] = entradas.sort((a, b) => a[1].vacio - b[1].vacio)[0];
+  return { equipo, ...datos };
+}
+
 // ==========================================================
 // 9. ANÁLISIS DEL DÍA (fecha exacta seleccionada, no un rango)
 // ----------------------------------------------------------
@@ -667,8 +710,26 @@ export function equipoConMasVacioDia(lineaFiltro = 'TODAS') {
   return { equipo, ...datos, fecha };
 }
 
+/** Devuelve el equipo con MENOS minutos de parada en el día completo (entre los que pararon). */
+export function equipoConMenosParadaDia(lineaFiltro = 'TODAS') {
+  const fecha = valor('fecha');
+  const entradas = Object.entries(agruparParadasPorEquipoEnFecha(fecha, lineaFiltro));
+  if (!entradas.length) return null;
+  const [equipo, datos] = entradas.sort((a, b) => a[1].minutos - b[1].minutos)[0];
+  return { equipo, ...datos, fecha };
+}
+
+/** Devuelve el equipo con MENOS minutos de vacío en el día completo (entre los que tuvieron vacío). */
+export function equipoConMenosVacioDia(lineaFiltro = 'TODAS') {
+  const fecha = valor('fecha');
+  const entradas = Object.entries(agruparParadasPorEquipoEnFecha(fecha, lineaFiltro)).filter(([, d]) => d.vacio > 0);
+  if (!entradas.length) return null;
+  const [equipo, datos] = entradas.sort((a, b) => a[1].vacio - b[1].vacio)[0];
+  return { equipo, ...datos, fecha };
+}
+
 /** Devuelve el defecto con mayor porcentaje promedio en el día completo (todos los turnos de la fecha seleccionada). */
-export function defectoPrincipalDia(lineaFiltro = 'TODAS') {
+export function defectoPrincipalDia(lineaFiltro = 'TODAS', orden = 'max') {
   const fecha = valor('fecha');
   let defectos = todasDefectos().filter(x => x.fecha === fecha);
   if (lineaFiltro !== 'TODAS') defectos = defectos.filter(x => x.linea === lineaFiltro);
@@ -683,7 +744,7 @@ export function defectoPrincipalDia(lineaFiltro = 'TODAS') {
   const [nombre, registros] = Object.entries(grupos).sort((a, b) => {
     const promA = a[1].reduce((s, x) => s + x.porcentaje, 0) / a[1].length;
     const promB = b[1].reduce((s, x) => s + x.porcentaje, 0) / b[1].length;
-    return promB - promA;
+    return orden === 'min' ? promA - promB : promB - promA;
   })[0];
 
   const porcentajePromedio = registros.reduce((s, x) => s + x.porcentaje, 0) / registros.length;
@@ -695,4 +756,47 @@ export function defectoPrincipalDia(lineaFiltro = 'TODAS') {
     cantidad: registros.length,
     accionMasReciente: masReciente.accion || ''
   };
+}
+
+
+// ==========================================================
+// 10. EVOLUCIÓN DE CALIDAD HORA A HORA (turno actual)
+// ==========================================================
+
+/**
+ * Analiza las lecturas de calidad hora a hora del turno actual para una línea
+ * y detecta en qué horario empezó a SUBIR (o a BAJAR) de forma sostenida.
+ * Devuelve { serie, primerAlza, primerBaja, min, max } o null si no hay datos.
+ *
+ * @param {string} tipo  'global' | 'parcial'
+ * @param {string} lineaFiltro
+ */
+export function evolucionCalidadTurno(tipo = 'global', lineaFiltro = 'TODAS') {
+  const s = sesion();
+  const lineas = lineaFiltro === 'TODAS' ? lineasActivas().map(l => l.id) : [lineaFiltro];
+
+  // Tomamos la primera línea con lecturas cargadas (o la seleccionada).
+  let lecturas = [];
+  for (const id of lineas) {
+    const o = s.objetivos?.porLinea?.[id];
+    const arr = (o?.lecturasCalidad || []).filter(x => x && x.hora &&
+      (tipo === 'global' ? x.global !== null && x.global !== undefined
+                         : x.parcial !== null && x.parcial !== undefined));
+    if (arr.length) { lecturas = arr; break; }
+  }
+  if (lecturas.length < 2) return null;
+
+  const serie = lecturas
+    .map(x => ({ hora: x.hora, valor: tipo === 'global' ? x.global : x.parcial }))
+    .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+
+  let primerAlza = null, primerBaja = null, min = serie[0], max = serie[0];
+  for (let i = 1; i < serie.length; i++) {
+    if (serie[i].valor > serie[i - 1].valor && !primerAlza) primerAlza = serie[i];
+    if (serie[i].valor < serie[i - 1].valor && !primerBaja) primerBaja = serie[i];
+    if (serie[i].valor < min.valor) min = serie[i];
+    if (serie[i].valor > max.valor) max = serie[i];
+  }
+
+  return { serie, primerAlza, primerBaja, min, max, tipo };
 }

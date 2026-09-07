@@ -9,7 +9,9 @@
 
 /** Devuelve el valor actual de un input/select por su id de HTML. */
 export function valor(id) {
-  return document.getElementById(id).value;
+  // Guarda de null: si el elemento no existe (aún no montado, id renombrado),
+  // devuelve '' en vez de romper el render completo con "Cannot read value of null".
+  return document.getElementById(id)?.value ?? '';
 }
 
 /** Igual que valor(), pero convierte el resultado a número (0 si no es válido). */

@@ -470,54 +470,81 @@
 
         <!-- VISTA 3: ANÁLISIS Y PARETO -->
         <section id="vistaAnalisis" class="hidden">
-          <!-- Selector de alcance temporal para los gráficos de este panel.
-               La línea la sigue eligiendo el selector "Área monitoreada" del header. -->
+          <!-- Selector de PERÍODO. La línea la sigue eligiendo "Área monitoreada". -->
           <div class="panel p-2 mb-3 no-print flex flex-wrap gap-2 items-center">
-            <span class="text-[11px] font-black text-slate-500 uppercase">Alcance de los gráficos:</span>
+            <span class="text-[11px] font-black text-slate-500 uppercase">Período:</span>
             <button id="btnAnalisisTurno" class="btn bg-sky-700 text-white text-xs py-1.5" onclick="cambiarModoAnalisis('turno')">Turno actual</button>
+            <button id="btnAnalisisDia" class="btn bg-white border border-slate-300 text-slate-700 text-xs py-1.5" onclick="cambiarModoAnalisis('dia')">Día completo (24 h)</button>
             <button id="btnAnalisisSemanal" class="btn bg-white border border-slate-300 text-slate-700 text-xs py-1.5" onclick="cambiarModoAnalisis('semanal')">Histórico semanal</button>
+            <button id="btnAnalisisMensual" class="btn bg-white border border-slate-300 text-slate-700 text-xs py-1.5" onclick="cambiarModoAnalisis('mensual')">Histórico mensual</button>
+            <span id="analisisRangoLabel" class="text-[11px] text-slate-400 ml-auto"></span>
           </div>
 
           <!-- ============================================================ -->
-          <!-- SEPARACIÓN VISUAL — BLOQUE 1: PARADAS Y VACÍOS DE HORNO -->
-          <!-- Mismo criterio de agrupación por tipo de dato que el Histórico -->
+          <!-- PARETOS (Turno actual / Día completo) -->
           <!-- ============================================================ -->
-          <h3 class="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2 mt-1">Análisis de paradas y vacíos de horno</h3>
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
-            <div class="panel p-3">
-              <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Pareto de causas</h2>
-              <div class="h-72"><canvas id="chartPareto"></canvas></div>
+          <div id="bloqueParetos">
+            <h3 class="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2 mt-1">Análisis de paradas y vacíos de horno</h3>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
+              <div class="panel p-3">
+                <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Pareto de causas / motivos (Top 6)</h2>
+                <div class="h-72"><canvas id="chartPareto"></canvas></div>
+              </div>
+              <div class="panel p-3">
+                <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Top 6 máquinas con más paradas</h2>
+                <div class="h-72"><canvas id="chartTopMaquinas"></canvas></div>
+              </div>
             </div>
-            <div class="panel p-3">
-              <h2 class="font-black text-amber-700 uppercase text-sm mb-2">Comparación por turno</h2>
-              <div class="h-72"><canvas id="chartTurnos"></canvas></div>
+
+            <h3 class="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2">Análisis de calidad — defectos</h3>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
+              <div class="panel p-3">
+                <h2 class="font-black text-rose-700 uppercase text-sm mb-2">Pareto de defectos de calidad (Top 6)</h2>
+                <div class="h-72"><canvas id="chartParetoDefectos"></canvas></div>
+              </div>
+              <div class="panel p-3">
+                <h2 class="font-black text-amber-700 uppercase text-sm mb-2">Quemado por línea (m²)</h2>
+                <div class="h-72"><canvas id="chartQuemadoLinea"></canvas></div>
+              </div>
             </div>
-            <div class="panel p-3 xl:col-span-2">
-              <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Top 5 máquinas con más minutos de parada</h2>
-              <div class="h-72"><canvas id="chartTopMaquinas"></canvas></div>
+
+            <div class="panel p-3">
+              <h2 class="font-black text-emerald-700 uppercase text-sm mb-2">Lectura para plan de acción</h2>
+              <div id="hallazgos" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
             </div>
           </div>
 
           <!-- ============================================================ -->
-          <!--  SEPARACIÓN VISUAL — BLOQUE 2: CALIDAD / DEFECTOS       -->
+          <!-- EVOLUCIÓN DÍA POR DÍA (Semanal / Mensual) -->
           <!-- ============================================================ -->
-          <h3 class="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2">Análisis de calidad — defectos</h3>
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
-            <div class="panel p-3">
-              <h2 class="font-black text-rose-700 uppercase text-sm mb-2">Pareto de defectos de calidad (Top 6)</h2>
-              <div class="h-72"><canvas id="chartParetoDefectos"></canvas></div>
+          <div id="bloqueEvolucion" class="hidden">
+            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-3 mb-4">
+              <div class="panel p-3">
+                <h2 class="font-black text-sky-700 uppercase text-sm mb-2">Paradas y vacío por día (min)</h2>
+                <div class="h-72"><canvas id="chartEvolParadas"></canvas></div>
+              </div>
+              <div class="panel p-3">
+                <h2 class="font-black text-indigo-700 uppercase text-sm mb-2">Motivo principal por día (min)</h2>
+                <div class="h-72"><canvas id="chartEvolMotivos"></canvas></div>
+              </div>
+              <div class="panel p-3">
+                <h2 class="font-black text-amber-700 uppercase text-sm mb-2">Quemado por día (m²)</h2>
+                <div class="h-72"><canvas id="chartEvolQuemado"></canvas></div>
+              </div>
+              <div class="panel p-3">
+                <h2 class="font-black text-emerald-700 uppercase text-sm mb-2">Calidad global por día (%)</h2>
+                <div class="h-72"><canvas id="chartEvolCalidad"></canvas></div>
+              </div>
+              <div class="panel p-3">
+                <h2 class="font-black text-rose-700 uppercase text-sm mb-2">Defecto principal por día (%)</h2>
+                <div class="h-72"><canvas id="chartEvolDefectos"></canvas></div>
+              </div>
             </div>
 
-            <!-- comparación de qué defecto le pega más a cada turno -->
             <div class="panel p-3">
-              <h2 class="font-black text-purple-700 uppercase text-sm mb-2">Defectos por turno (Mañana / Tarde / Noche)</h2>
-              <div class="h-72"><canvas id="chartDefectosPorTurno"></canvas></div>
+              <h2 class="font-black text-emerald-700 uppercase text-sm mb-2">Lectura para plan de acción</h2>
+              <div id="hallazgosEvolucion" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
             </div>
-          </div>
-
-          <div class="panel p-3">
-            <h2 class="font-black text-emerald-700 uppercase text-sm mb-2">Lectura para plan de acción</h2>
-            <div id="hallazgos" class="grid grid-cols-1 md:grid-cols-3 gap-2"></div>
           </div>
         </section>
         
@@ -874,14 +901,55 @@
         <span>Asistente de Análisis KIRA</span>
       </div>
       <div class="flex items-center gap-1">
+        <button onclick="abrirAjustesAsistente()" class="asistente-limpiar" title="Ajustes (IA / API key)">⚙️</button>
         <button onclick="limpiarChatAsistente()" class="asistente-limpiar" title="Limpiar conversación">🗑️</button>
         <button onclick="alternarAsistente()" class="asistente-cerrar" title="Cerrar">✕</button>
       </div>
     </header>
 
+    <!-- Sub-panel de AJUSTES (IA / API key). Oculto por defecto; se abre con ⚙️.
+         La clave se guarda solo en este equipo (localStorage), se muestra
+         enmascarada y se puede borrar. KIRA responde con sus reglas todo lo
+         que sabe (gratis); la IA solo se usa para preguntas que las reglas no
+         cubren, y solo si hay clave cargada. -->
+    <div id="asistenteAjustes" class="asistente-ajustes hidden">
+      <div class="text-[13px] font-black text-slate-700 mb-1">Ajustes de IA (opcional)</div>
+      <p class="text-[11px] text-slate-500 mb-2 leading-snug">
+        KIRA responde solo lo que ya sabe con sus datos. Si cargás una API key,
+        las preguntas que no pueda responder se consultan con la IA elegida.
+        La clave se guarda solo en esta computadora y nunca se muestra completa.
+      </p>
+      <div id="asistenteApiEstado" class="text-[11px] font-bold mb-2"></div>
+
+      <label class="text-[10px] uppercase font-black text-slate-500">Proveedor de IA</label>
+      <select id="asistenteProveedor" class="field text-xs mt-1" onchange="cambiarProveedorIA(this.value)">
+        <option value="gemini">Google Gemini</option>
+        <option value="openai">OpenAI (ChatGPT)</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+      </select>
+
+      <label class="text-[10px] uppercase font-black text-slate-500 mt-2 block">Modelo (opcional)</label>
+      <input id="asistenteModelo" type="text" class="field text-xs mt-1" placeholder="Ej: gemini-flash-latest (vacío = automático)" onchange="cambiarModeloIA(this.value)" autocomplete="off">
+      <p class="text-[10px] text-slate-400 mt-1 leading-snug">Dejalo vacío y KIRA elige el modelo automáticamente. Solo completalo si el proveedor cambió los nombres.</p>
+
+      <label class="text-[10px] uppercase font-black text-slate-500 mt-2 block">API key</label>
+      <div class="flex gap-1 mt-1">
+        <input id="asistenteApiKey" type="password" class="field text-xs" placeholder="Pegá tu API key" autocomplete="off">
+        <button type="button" onclick="guardarApiKeyAsistente()" class="btn bg-sky-700 text-white text-xs px-3">Guardar</button>
+      </div>
+      <p class="text-[10px] text-amber-700 mt-2 leading-snug">
+        ⚠️ Al usar la IA, tu pregunta y un resumen del turno se envían al proveedor
+        elegido (sale a internet). Sin clave, KIRA sigue funcionando 100% local.
+      </p>
+      <div class="flex gap-2 mt-2">
+        <button type="button" onclick="borrarApiKeyAsistente()" class="btn bg-rose-600 text-white text-xs px-3">Borrar clave</button>
+        <button type="button" onclick="abrirAjustesAsistente()" class="btn bg-slate-200 text-slate-700 text-xs px-3">Cerrar</button>
+      </div>
+    </div>
+
     <div id="asistenteMensajes" class="asistente-mensajes">
       <div class="asistente-msg asistente-msg-bot">
-        Hola, soy el asistente de análisis de KIRA. No uso IA externa — trabajo 100% con los datos que ya cargaste. Elegí una consulta o escribí el nombre de un equipo.
+        Hola, soy el asistente de análisis de KIRA. Respondo con los datos que ya cargaste. Elegí una consulta o escribí el nombre de un equipo. Si cargás una API key en ⚙️ Ajustes, también puedo responder preguntas más abiertas con IA.
       </div>
     </div>
 

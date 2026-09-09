@@ -27,6 +27,19 @@ import { asegurarDefectosSesion, renderDefectos } from './gestionDefectos.js';
 import { renderAnalisis } from './graficosYAnalisis.js';
 import { todasParadas, todasDefectos } from './historicos.js';
 import { minutosDesdeInicioTurno, objetivoAcumuladoHasta } from '../nucleo/horno.js';
+import { areaDelRol } from '../nucleo/roles.js';
+import { renderPlanillaCalidadInline, renderTomasEnviadasVistaPlanta } from './cargaCalidad.js';
+
+/**
+ * Filtra una lista de equipos al área del rol actual: calidad ve solo sus
+ * equipos (Qualitron), producción los suyos, admin/supervisor ven todos.
+ * Centraliza el criterio para el sinóptico y los indicadores por equipo.
+ */
+function equiposDelArea(equipos) {
+  const area = areaDelRol();
+  if (!area) return equipos;
+  return equipos.filter(e => (e.area || 'produccion') === area);
+}
 
 /**
  * Convierte la lista de eventos de producción de una línea en tramos aptos
@@ -247,7 +260,7 @@ export function renderMaquinas() {
   document.getElementById('maquinas').innerHTML = lineas.map(l => {
     const lineaConfig = lineaPorId(l);
     if (!lineaConfig) return '';
-    const baseEquips = lineaConfig.equipos.filter(e => e.activo !== false);
+    const baseEquips = equiposDelArea(lineaConfig.equipos.filter(e => e.activo !== false));
 
     const bloques = baseEquips.map((eqConfig, idx) => {
       const eqBase = eqConfig.nombre;
@@ -283,19 +296,22 @@ export function renderMaquinas() {
 
     const total = s.paradas.filter(x => x.linea === l).reduce((a, x) => a + x.minutos, 0);
     const prod = s.productoPorLinea[l] || { producto: '', formato: '' };
+    // La descripción de la línea (ej. "Prensas 1 y 2 → ...") describe el proceso
+    // de producción; no se muestra al rol calidad, cuya única máquina es el Qualitron.
+    const desc = (areaDelRol() === 'calidad') ? '' : lineaConfig.descripcion;
     return `
       <section class="scada-line mb-3">
         <div class="line-caption flex flex-wrap items-center justify-between">
           <div class="flex flex-wrap items-center gap-20">
-            <span>${esc(lineaConfig.nombre)}${lineaConfig.descripcion ? ` · ${esc(lineaConfig.descripcion)}` : ''}</span>
-            <div class="flex gap-2 no-print items-center">
+            <span>${esc(lineaConfig.nombre)}${desc ? ` · ${esc(desc)}` : ''}</span>
+            ${areaDelRol() === 'calidad' ? '' : `<div class="flex gap-2 no-print items-center">
               <label class="text-[9px] font-bold text-slate-500">Producto
                 <input type="text" class="field mt-1 text-[11px]" style="padding:2px 6px;height:24px;width:180px;" value="${esc(prod.producto)}" placeholder="Ej: ARUSHA ARENA" onchange="guardarProduccionLinea('${l}','producto',this.value)">
               </label>
               <label class="text-[9px] font-bold text-slate-500">Formato
                 <input type="text" class="field mt-1 text-[11px]" style="padding:2px 6px;height:24px;width:110px;" value="${esc(prod.formato)}" placeholder="Ej: 45x45" onchange="guardarProduccionLinea('${l}','formato',this.value)">
               </label>
-            </div>
+            </div>`}
           </div>
           <span>Tiempo detenido: ${total} min</span>
         </div>
@@ -333,6 +349,9 @@ export function renderTodo() {
   renderMaquinas();
   renderAcciones();
   renderDefectos();
+  // Planilla de calidad embebida (solo se dibuja si el panel existe; oculto a
+  // producción por data-cap). Va acá para refrescarse al cambiar de línea.
+  if (areaDelRol() === 'calidad') renderPlanillaCalidadInline();
 }
 
 /** Clasifica un valor numérico en un nivel de criticidad (bajo/medio/alto/crítico) según umbrales dados. */
@@ -345,6 +364,8 @@ export function nivelPorValor(valor, umbrales) {
 
 /** Cambia el área monitoreada (filtro de línea) y refresca todas las vistas visibles en pantalla. */
 export function cambiarAreaMonitoreada() {
+  // El operario de calidad es por línea: al cambiar de área, recargar cabecera.
+  if (window.cargarCabeceraCalidad) window.cargarCabeceraCalidad();
   renderTodo();
   if (!document.getElementById('vistaAnalisis').classList.contains('hidden')) renderAnalisis();
   if (!document.getElementById('vistaPlanta').classList.contains('hidden')) renderVistaPlanta();
@@ -435,7 +456,7 @@ export function calcularKpisPlanta(l) {
   let filasMaquinas = [];
   let filasMapaCalor = [];
   lineasIter.forEach(lineaConfig => {
-    lineaConfig.equipos.filter(e => e.activo !== false).forEach(eqConfig => {
+    equiposDelArea(lineaConfig.equipos.filter(e => e.activo !== false)).forEach(eqConfig => {
       const regs = paradasScope.filter(x => {
         if (x.linea !== lineaConfig.id) return false;
         if (x.equipoId) return x.equipoId === eqConfig.id;
@@ -492,7 +513,7 @@ export function calcularKpisPlanta(l) {
   const nivelCritica = nivelPorValor(maquinaCritica?.mins || 0, UMBRAL_PARADA);
   const valorCriticaColor = nivelCritica.key >= 2 ? 'text-rose-700' : (nivelCritica.key === 1 ? 'text-amber-600' : 'text-emerald-700');
 
-  const totalEquiposScope = lineasIter.reduce((a, lc) => a + lc.equipos.filter(e => e.activo !== false).length, 0);
+  const totalEquiposScope = lineasIter.reduce((a, lc) => a + equiposDelArea(lc.equipos.filter(e => e.activo !== false)).length, 0);
   const equiposConProblema = filasMaquinas.filter(f => {
     const nP = nivelPorValor(f.mins, UMBRAL_PARADA);
     const nV = nivelPorValor(f.vacio, UMBRAL_VACIO);
@@ -853,6 +874,10 @@ export function renderVistaPlanta() {
   
   // Renderizar gráfico de evolución de defectos
   renderizarGraficoEvolucionDefectos(l, defectosScope, s);
+
+  // Reflejar las tomas de calidad enviadas (solo rol calidad; el contenedor
+  // está oculto para el resto por data-cap).
+  if (areaDelRol() === 'calidad') renderTomasEnviadasVistaPlanta();
 }
 
 /**
@@ -1581,30 +1606,27 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
       return;
     }
 
-    // Obtener el objetivo de defectos
-    const objetivoDefectos = s.objetivos?.porLinea?.[lineaUsada]?.defectosMax || 8;
-    console.log('Objetivo de defectos:', objetivoDefectos);
+    // Línea de REFERENCIA de defectos (no es un objetivo configurable): una
+    // guía visual fina en 1% para leer de un vistazo si un defecto está por
+    // encima o por debajo de ese umbral. Los defectos de calidad se miden en
+    // porcentajes chicos, así que 1% es una referencia razonable.
+    const refDefectos = 1;
 
-    // RANGO DEL EJE Y: el gráfico se ajusta a los DATOS (los defectos ocupan
-    // bien el alto, con 10% de margen arriba y abajo), pero SIEMPRE se
-    // garantiza que la línea de objetivo quede visible dentro del rango,
-    // aunque todos los defectos estén por encima (o por debajo) del objetivo.
+    // RANGO DEL EJE Y AUTOMÁTICO: se ajusta a los datos con un margen del ~10%
+    // arriba y abajo, para que ningún % quede pegado al techo ni al piso del
+    // gráfico. Siempre incluye la línea de referencia (1%) dentro del rango.
     const valoresDef = datasets.flatMap(ds => ds.data.filter(v => v !== null && v !== undefined && !isNaN(v)));
 
     let yMinDef, yMaxDef;
     if (valoresDef.length === 0) {
-      // Sin datos: mostrar el objetivo centrado con un pequeño rango.
-      const semi = Math.max(objetivoDefectos * 0.5, 0.5);
-      yMinDef = Math.max(0, objetivoDefectos - semi);
-      yMaxDef = objetivoDefectos + semi;
+      // Sin datos: mostrar la referencia centrada con un rango chico.
+      yMinDef = 0;
+      yMaxDef = Math.max(refDefectos * 2, 2);
     } else {
-      let minVal = Math.min(...valoresDef);
-      let maxVal = Math.max(...valoresDef);
-      // Incluir el objetivo en el rango para que nunca quede fuera de pantalla.
-      minVal = Math.min(minVal, objetivoDefectos);
-      maxVal = Math.max(maxVal, objetivoDefectos);
+      let minVal = Math.min(...valoresDef, refDefectos);
+      let maxVal = Math.max(...valoresDef, refDefectos);
       const span = maxVal - minVal;
-      // Margen del 10% del rango (con un piso para no aplastar si span ~ 0).
+      // Margen del 10% del rango (con piso para no aplastar cuando span ~ 0).
       const margen = Math.max(span * 0.10, 0.3);
       yMinDef = Math.max(0, minVal - margen);
       yMaxDef = maxVal + margen;
@@ -1717,26 +1739,26 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
           
           if (!yScale || !xScale) return;
 
-          // Dibujar línea de objetivo
-          const yPixel = yScale.getPixelForValue(objetivoDefectos);
+          // Línea de referencia fina (1%): guía visual, no un objetivo.
+          const yPixel = yScale.getPixelForValue(refDefectos);
           const xStart = xScale.left;
           const xEnd = xScale.right;
 
           ctx.save();
-          ctx.strokeStyle = 'rgb(148, 163, 184)'; // Gris
-          ctx.lineWidth = 2;
-          ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)'; // Gris tenue
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
           ctx.beginPath();
           ctx.moveTo(xStart, yPixel);
           ctx.lineTo(xEnd, yPixel);
           ctx.stroke();
           ctx.restore();
 
-          // Etiqueta del objetivo
-          ctx.fillStyle = 'rgb(100, 116, 139)'; // Gris oscuro
-          ctx.font = 'bold 10px sans-serif';
+          // Etiqueta de la referencia
+          ctx.fillStyle = 'rgb(100, 116, 139)';
+          ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'right';
-          ctx.fillText(`Objetivo: ${objetivoDefectos}%`, xEnd - 5, yPixel - 5);
+          ctx.fillText(`Ref. ${refDefectos}%`, xEnd - 5, yPixel - 4);
         }
       }]
     });
@@ -1752,3 +1774,6 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
 // ==========================================================
 window.cambiarAreaMonitoreada = cambiarAreaMonitoreada;
 window.cambiarPeriodoVista = cambiarPeriodoVista;
+// Expuesto para que cargaCalidad.js refresque el dashboard tras enviar una
+// toma (sin crear dependencia circular de import).
+window.renderTodo = renderTodo;

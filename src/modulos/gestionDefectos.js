@@ -111,14 +111,21 @@ export function editarDefecto(id) {
 
 /** Dibuja la lista de defectos de calidad recientes del turno. */
 export function renderDefectos() {
+  // El panel de defectos del dashboard se eliminó (los defectos ahora se
+  // cargan en la planilla de calidad). Si sus contenedores no existen, no hay
+  // nada que dibujar. Se conserva la función y el modal por compatibilidad.
+  const cont = document.getElementById('defectosRecientes');
+  const cnt = document.getElementById('cantidadDefectos');
+  if (!cont || !cnt) return;
+
   const s = sesion();
   asegurarDefectosSesion(s);
   const lineaFiltro = valor('lineaVista');
   const d = [...s.defectos]
     .filter(x => lineaFiltro === 'TODAS' || x.linea === lineaFiltro)
     .reverse();
-  document.getElementById('cantidadDefectos').textContent = d.length;
-  document.getElementById('defectosRecientes').innerHTML = d.length ? d.map(x => `
+  cnt.textContent = d.length;
+  cont.innerHTML = d.length ? d.map(x => `
     <div class="flex justify-between items-start border-b border-slate-200 pb-2 bg-white p-2 rounded shadow-xs">
       <div>
         <div class="flex justify-between font-bold text-slate-800 gap-2"><b>${esc(x.nombre)}</b><span class="text-slate-400 text-[11px]">${x.hora ? esc(x.hora) + ' hs · ' : ''}${esc(nombreLinea(x.linea))}</span></div>

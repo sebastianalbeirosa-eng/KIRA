@@ -2,12 +2,26 @@
 // SISTEMA DE AUTENTICACIÓN KIRA
 // ============================================
 
-// Usuarios de ejemplo (en producción esto debería estar en un servidor)
-const USUARIOS = {
-  'admin': { password: 'admin123', nombre: 'Administrador', rol: 'admin' },
-  'supervisor': { password: 'super123', nombre: 'Supervisor', rol: 'supervisor' },
-  'Marcelo': { password: 'Marce123', nombre: 'Marcelo Molina', rol: 'operario' }
+// Usuarios de ejemplo. En KIRA 4.0 esto vivirá en la base (SQLite/servidor)
+// y lo administrará el rol admin. Por ahora, para la Fase 0, quedan fijos +
+// los que el admin cree se guardan en localStorage (ver gestión de usuarios).
+// Roles válidos: 'calidad', 'produccion', 'supervisor', 'admin'.
+const USUARIOS_BASE = {
+  'admin':      { password: 'admin123',  nombre: 'Administrador',      rol: 'admin' },
+  'calidad':    { password: 'calidad123', nombre: 'Operario Calidad',   rol: 'calidad' },
+  'produccion': { password: 'prod123',    nombre: 'Operario Producción', rol: 'produccion' },
+  'supervisor': { password: 'super123',   nombre: 'Supervisor',         rol: 'supervisor' }
 };
+
+/**
+ * Combina los usuarios base con los que el admin haya creado (guardados en
+ * localStorage bajo 'kira_usuarios'). Los creados por admin tienen prioridad.
+ */
+function obtenerUsuarios() {
+  let extra = {};
+  try { extra = JSON.parse(localStorage.getItem('kira_usuarios')) || {}; } catch { extra = {}; }
+  return { ...USUARIOS_BASE, ...extra };
+}
 
 // Toggle para mostrar/ocultar contraseña
 document.getElementById('togglePassword')?.addEventListener('click', function() {
@@ -44,7 +58,7 @@ function mostrarError(mensaje) {
 
 // Función para validar credenciales
 function validarCredenciales(username, password) {
-  const usuario = USUARIOS[username];
+  const usuario = obtenerUsuarios()[username];
   
   if (!usuario) {
     return { exito: false, mensaje: 'Usuario no encontrado' };

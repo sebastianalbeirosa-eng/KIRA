@@ -92,6 +92,12 @@
           <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><circle cx="12" cy="12" r="9"/><line x1="12" y1="10" x2="12" y2="16"/><circle cx="12" cy="7" r="0.6" fill="currentColor" stroke="none"/></svg></span>
           Acerca de
         </button>
+
+        <!-- Gestión de usuarios (solo rol admin; el menú se filtra por rol) -->
+        <button id="tabUsuarios" class="side-link hidden" onclick="mostrarTab('usuarios')">
+          <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          Usuarios
+        </button>
       </nav>
       <div class="mt-auto p-4 border-t border-slate-700/70 text-[11px] text-slate-400">
         <!-- Información del usuario -->
@@ -145,8 +151,8 @@
       <header id="headerOperativo" class="mb-3 no-print">
         <div class="flex flex-wrap justify-between items-start gap-3 mb-3">
           <div>
-            <h1 class="text-4xl font-black text-slate-800 tracking-tight">Control Operativo de Producción</h1>
-            <p class="text-2s text-slate-500">Gestión de paradas, vacío de horno y acciones correctivas</p>
+            <h1 id="tituloApp" class="text-4xl font-black text-slate-800 tracking-tight">Control Operativo de Producción</h1>
+            <p id="subtituloApp" class="text-2s text-slate-500">Gestión de paradas, vacío de horno y acciones correctivas</p>
           </div>
           <div class="header-actions flex gap-2">
             <button class="btn px-4 py-2 text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="imprimirVista()">Imprimir</button>
@@ -156,25 +162,35 @@
         </div>
         <!-- Panel de control de sesión operativa. Los 5 selectores van SIEMPRE
              en una sola línea (grid-cols-5 fijo), incluso en monitores chicos. -->
-        <div class="panel selectores-turno px-2 py-2 grid grid-cols-5 gap-2">
-          <label class="text-[11px] uppercase font-black text-slate-500">Fecha operativa
-            <input id="fecha" type="date" class="field mt-1" onchange="cambiarSesion()">
+        <div class="panel selectores-turno px-2 py-2 flex flex-wrap gap-2">
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[130px]">Fecha operativa
+            <input id="fecha" type="date" class="field mt-1 w-full" onchange="cambiarSesion()">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500">Turno
-            <select id="turno" class="field mt-1" onchange="cambiarTurno()">
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[110px]">Turno
+            <select id="turno" class="field mt-1 w-full" onchange="cambiarTurno()">
               <option value="Mañana">Mañana</option>
               <option value="Tarde">Tarde</option>
               <option value="Noche">Noche</option>
             </select>
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500">Supervisor
-            <input id="supervisor" class="field mt-1" placeholder="Nombre y apellido" oninput="guardarMeta()">
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[150px]">Supervisor
+            <input id="supervisor" class="field mt-1 w-full" placeholder="Nombre y apellido" oninput="guardarMeta()">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500">Área monitoreada
-            <select id="lineaVista" class="field mt-1" onchange="cambiarAreaMonitoreada()"></select>
+          <!-- Solo rol calidad: operario de calidad y producto/formato -->
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[150px]" data-cap="cargarCalidad">Operario de calidad
+            <input id="operarioCalidad" class="field mt-1 w-full" placeholder="Nombre y apellido" oninput="guardarMeta()">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500">Período
-            <select id="periodoVista" class="field mt-1" onchange="cambiarPeriodoVista(this.value)">
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[130px]" data-cap="cargarCalidad">Producto
+            <input id="productoCabecera" class="field mt-1 w-full" placeholder="Ej: MARA FIT NEGRO" oninput="guardarMeta()">
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[110px]" data-cap="cargarCalidad">Formato
+            <input id="formatoCabecera" class="field mt-1 w-full" placeholder="Ej: 45x45" oninput="guardarMeta()">
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[150px]">Área monitoreada
+            <select id="lineaVista" class="field mt-1 w-full" onchange="cambiarAreaMonitoreada()"></select>
+          </label>
+          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[130px]">Período
+            <select id="periodoVista" class="field mt-1 w-full" onchange="cambiarPeriodoVista(this.value)">
               <option value="turno">Turno actual</option>
               <option value="dia">Día completo (24 h)</option>
             </select>
@@ -199,6 +215,9 @@
       <section id="vistaPlanta" class="hidden">
           <!-- Tarjetas KPI del turno ... cols-7 indica 7 tarjetas kpis, si modificamos el numero podemos meter mas o menos tarjetas-->
           <div class="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-4" id="vpKpis"></div>
+
+          <!-- Tomas de calidad ENVIADAS del turno (solo rol calidad) -->
+          <div id="vpCalidadTomas" class="mb-4" data-cap="cargarCalidad"></div>
 
           <div class="grid grid-cols-1 gap-3">
 
@@ -356,25 +375,32 @@
         <!-- VISTA 1 (ex "Vista de planta"): CARGA DE DATOS — DASHBOARD Y SINÓPTICO DE LÍNEAS -->
         <section id="vistaDash">
         
-          <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-3" id="kpis"></div>
+          <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-3" id="kpis" data-cap="cargarProduccion"></div>
 
-          <div class="panel p-3 mb-3">
+          <div class="panel p-3 mb-3" data-cap="cargarProduccion">
             <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
               <div>
                 <h2 class="font-black text-slate-700 uppercase text-sm">Sinóptico de líneas de producción</h2>
                 <p class="text-[11px] text-slate-500">Secuencia del proceso desde prensas hasta entrada de horno. Haga click en una máquina para registrar o gestionar paradas.</p>
               </div>
               <div class="flex gap-2 no-print">
-                <button class="btn bg-sky-600 text-white hover:bg-sky-700 text-xs py-1.5" onclick="abrirParada()">Registrar parada</button>
-                <button class="btn bg-amber-600 text-white hover:bg-amber-700 text-xs py-1.5" onclick="abrirAccion()">Acción correctiva</button>
-                <button class="btn bg-slate-600 text-white hover:bg-slate-700 text-xs py-1.5" onclick="abrirIndicadores()">Indicadores y objetivos</button>
+                <button class="btn bg-sky-600 text-white hover:bg-sky-700 text-xs py-1.5" onclick="abrirParada()" data-cap="cargarProduccion">Registrar parada</button>
+                <button class="btn bg-amber-600 text-white hover:bg-amber-700 text-xs py-1.5" onclick="abrirAccion()" data-cap="cargarProduccion">Acción correctiva</button>
+                <button class="btn bg-slate-600 text-white hover:bg-slate-700 text-xs py-1.5" onclick="abrirIndicadores()" data-cap="cargarProduccion">Indicadores y objetivos</button>
               </div>
             </div>
             <div id="maquinas"></div>
           </div>
 
+          <!-- ============================================================ -->
+          <!--  PLANILLA DE CALIDAD (inline, solo rol calidad)             -->
+          <!--  Se carga acá mismo, sin modal. La línea es la elegida en   -->
+          <!--  "Área monitoreada" (#lineaVista). Guardado automático.     -->
+          <!-- ============================================================ -->
+          <div id="panelCalidadInline" class="panel p-3 mb-3" data-cap="cargarCalidad"></div>
+
          <div class="desktop-grid grid grid-cols-1 xl:grid-cols-2 gap-3">
-            <div class="panel p-3 flex flex-col">
+            <div class="panel p-3 flex flex-col" data-cap="cargarProduccion">
               <div class="flex justify-between items-center mb-2">
                 <h3 class="text-l font-black text-emerald-700 uppercase">Gestión y registro de acciones correctivas</h3>
                 <span id="cantidadAcciones" class="badge bg-emerald-100 text-emerald-800">0</span>
@@ -386,21 +412,9 @@
               </div>
             </div>
 
-            <!-- ============================================================ -->
-            <!--  CONTROL DE CALIDAD — DEFECTOS DEL TURNO          -->
-            <!-- Acá el operador carga qué % de piezas salió con cada defecto -->
-            <!-- ============================================================ -->
-            <div class="panel p-3 flex flex-col">
-              <div class="flex justify-between items-center mb-2">
-                <h3 class="text-l font-black text-rose-700 uppercase">Control de calidad — Defectos del turno</h3>
-                <span id="cantidadDefectos" class="badge bg-rose-100 text-rose-800">0</span>
-              </div>
-              <p class="text-[12px] text-slate-500 mb-2">Porcentaje de piezas con defecto detectado durante el turno, por tipo de defecto:</p>
-              <div id="defectosRecientes" class="space-y-2 flex-1 max-h-56 overflow-auto border border-slate-200 p-2 rounded bg-slate-50"></div>
-              <div class="mt-2 text-right">
-                <button class="btn px-4 py-2 text-sm bg-rose-600 text-white text-2s py-1 hover:bg-rose-700" onclick="abrirDefecto()">+ Agregar defecto</button>
-              </div>
-            </div>
+            <!-- El viejo panel "Control de calidad — Defectos del turno" se
+                 eliminó: los defectos ahora se cargan en la planilla de calidad
+                 (#panelCalidadInline) por toma, y alimentan el TOP de defectos. -->
           </div>
         </section>
 
@@ -876,6 +890,35 @@
 
 </section>
 
+        <!-- ============================================================ -->
+        <!-- VISTA: GESTIÓN DE USUARIOS (solo admin) -->
+        <!-- ============================================================ -->
+        <section id="vistaUsuarios" class="hidden">
+          <div class="panel p-4 mb-3">
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-1">
+              <div>
+                <h2 class="font-black text-slate-700 uppercase text-sm">Gestión de usuarios</h2>
+                <p class="text-[11px] text-slate-500">Crear, editar y eliminar usuarios y sus roles. Los cambios se aplican en el próximo inicio de sesión.</p>
+              </div>
+              <button class="btn bg-sky-700 text-white hover:bg-sky-800 text-xs py-1.5" onclick="abrirEditorUsuario()">+ Nuevo usuario</button>
+            </div>
+          </div>
+          <div class="panel p-3 overflow-auto">
+            <table class="table w-full text-xs text-slate-800">
+              <thead>
+                <tr>
+                  <th class="text-left">Usuario</th>
+                  <th class="text-left">Nombre</th>
+                  <th class="text-center">Rol</th>
+                  <th class="text-center">Origen</th>
+                  <th class="text-center no-print">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tablaUsuarios"></tbody>
+            </table>
+          </div>
+        </section>
+
       </main>
     </div> <!-- cierra .app-main -->
   </div> <!-- cierra .app-shell -->
@@ -1279,6 +1322,32 @@
           <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalDefecto')">Cancelar</button>
           <button class="btn bg-rose-700 text-white hover:bg-rose-800">Guardar defecto</button>
         </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal de alta/edición de usuario (solo admin) -->
+  <div id="modalUsuario" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+    <form class="panel w-full max-w-md p-4 bg-white shadow-xl" onsubmit="guardarUsuario(event)" autocomplete="off">
+      <div class="flex justify-between mb-3"><h2 id="modalUsuarioTitulo" class="font-black text-sky-700">Nuevo usuario</h2><button type="button" onclick="cerrar('modalUsuario')">✕</button></div>
+      <!-- Si tiene valor, estamos editando ese usuario (username no editable). -->
+      <input type="hidden" id="editUsuarioOriginal">
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs font-bold">Usuario (para iniciar sesión)<input id="uUsername" class="field mt-1" placeholder="ej: jperez" required></label>
+        <label class="text-xs font-bold">Nombre completo<input id="uNombre" class="field mt-1" placeholder="ej: Juan Pérez" required></label>
+        <label class="text-xs font-bold">Rol
+          <select id="uRol" class="field mt-1" required>
+            <option value="calidad">Calidad</option>
+            <option value="produccion">Producción</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </label>
+        <label class="text-xs font-bold">Contraseña<input id="uPassword" type="password" class="field mt-1" placeholder="Dejar vacío para no cambiar (al editar)" autocomplete="new-password"></label>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalUsuario')">Cancelar</button>
+        <button class="btn bg-sky-700 text-white hover:bg-sky-800">Guardar usuario</button>
       </div>
     </form>
   </div>

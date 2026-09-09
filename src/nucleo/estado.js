@@ -43,10 +43,22 @@ export function tipoEquipo(nombre) {
   if (!nombre) return 'General';
   if (nombre.includes('Prensa')) return 'Prensa';
   if (nombre.includes('Secadero')) return 'Secadero';
+  if (nombre.includes('Qualitron') || nombre.includes('QUALITRON')) return 'Calidad';
   if (['Kerajet', 'Rotocolor', 'Rotomatrix'].some(x => nombre.includes(x))) return 'Digital';
   if (['Transporte', 'SIMA', 'SITI', 'Entrada'].some(x => nombre.includes(x))) return 'Transporte';
   if (['Cabina', 'Campanas'].some(x => nombre.includes(x))) return 'Esmalte';
   return 'General';
+}
+
+/**
+ * Área a la que pertenece un equipo: siempre 'produccion'. Los equipos del
+ * sinóptico (prensas, secadero, ... y el Qualitron) los administra y monitorea
+ * el rol producción. Calidad ya no tiene equipos propios: su carga es la
+ * planilla de tomas, no el sinóptico. Se mantiene la función (en vez de
+ * hardcodear el string) por si en el futuro vuelve a haber equipos por área.
+ */
+export function areaEquipo() {
+  return 'produccion';
 }
 
 /** Crea la estructura inicial de una línea de producción con sus equipos. */
@@ -60,6 +72,7 @@ export function crearLineaInicial(id, nombre, descripcion, nombresEquipos) {
       id: `${id}-E${String(i + 1).padStart(2, '0')}`,
       nombre: nombreEquipo,
       tipo: tipoEquipo(nombreEquipo),
+      area: areaEquipo(nombreEquipo),
       activo: true
     }))
   };
@@ -94,6 +107,17 @@ export function asegurarModeloPlanta() {
     };
   }
 
+  // Migración de ÁREA en equipos: todos los equipos del sinóptico son de
+  // producción. Los equipos guardados sin 'area' o marcados como 'calidad'
+  // (versión anterior, cuando el Qualitron era de calidad) se normalizan a
+  // 'produccion'. El Qualitron, si existe, queda como un equipo más de la
+  // línea que administra producción (ya no se agrega ni se trata aparte).
+  db.planta.lineas.forEach(linea => {
+    linea.equipos.forEach(eq => {
+      if (eq.area !== 'produccion') eq.area = 'produccion';
+    });
+  });
+
   Object.values(db.sesiones).forEach(s => {
     (s.paradas || []).forEach(p => {
       if (p.equipoId) return;
@@ -123,6 +147,21 @@ export function lineasActivas() {
 /** Busca una línea por su id. */
 export function lineaPorId(id) {
   return db.planta.lineas.find(l => l.id === id);
+}
+
+/**
+ * Devuelve los equipos ACTIVOS de una línea, opcionalmente filtrados por área
+ * ('calidad' | 'produccion'). Si no se pasa área, devuelve todos. Un equipo sin
+ * área definida se considera 'produccion' (compatibilidad con datos viejos).
+ */
+export function equiposDeLinea(lineaId, area = null) {
+  const linea = lineaPorId(lineaId);
+  if (!linea) return [];
+  return linea.equipos.filter(e => {
+    if (e.activo === false) return false;
+    if (!area) return true;
+    return (e.area || 'produccion') === area;
+  });
 }
 
 /** Devuelve el nombre visible de una línea (o "Otras paradas" para GENERAL). */
@@ -189,6 +228,102 @@ export function sesion() {
   Las lecturas reales pertenecen al turno/sesión actual.
 */
 
+/**
+ * Crea/normaliza una "toma" de la planilla de calidad. Cada toma es una columna
+ * de la planilla del auditor: TODO lo cargado a cierta hora del turno.
+ *   hora        HH:MM de la medición (una sola por toma; el resto cuelga de acá)
+ *   global      calidad global acumulada del turno (%)
+ *   parcial1    calidad parcial medida en el momento (%)
+ *   tono        número de tono medido
+ *   m2          m² clasificados
+ *   vacioHorno  vacío de horno (min)
+ *   segunda     % que se está mandando a segunda calidad (%)
+ *   rotura      % de rotura/descarte total en el momento (%)
+ *   defectos    [{nombre, pct, aclaracion}] defectos de calidad de esta toma
+ *   roturas     [{nombre, pct}] % de descarte a rotura por cada defecto
+ *   acciones    [texto] acciones de calidad (ej. "calibración de Qualitron")
+ *   fotos       [dataURL] imágenes (base64 comprimido) de los defectos
+ *   enviada     true cuando el operario tocó "Enviar datos" (se refleja en Vista de Planta)
+ */
+export function crearTomaCalidad(base = {}) {
+  const num = v => (v === '' || v === null || v === undefined || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  // IMPORTANTE: NO se filtran las filas vacías. crearTomaCalidad() se llama en
+  // cada asegurarObjetivosSesion() para normalizar; si acá se descartaran las
+  // filas sin datos, una fila recién agregada con el botón "+" (nombre vacío)
+  // desaparecería al instante. El filtrado de vacíos se hace solo al mostrar
+  // en Vista de Planta / sincronizar defectos, no en la normalización.
+  const defs = arr => Array.isArray(arr)
+    ? arr.map(d => ({ nombre: String(d?.nombre || '').trim(), pct: num(d?.pct), aclaracion: String(d?.aclaracion || '').trim() }))
+    : [];
+  const rots = arr => Array.isArray(arr)
+    ? arr.map(d => ({ nombre: String(d?.nombre || '').trim(), pct: num(d?.pct), aclaracion: String(d?.aclaracion || '').trim() }))
+    : [];
+  const texts = arr => Array.isArray(arr) ? arr.map(x => String(x || '')) : [];
+  const imgs = arr => Array.isArray(arr) ? arr.filter(x => typeof x === 'string' && x.startsWith('data:')) : [];
+  return {
+    hora: base.hora || '',
+    // Producto/formato de la toma: si se cargan y difieren de la toma previa,
+    // marcan un cambio de producto que se remarca como quiebre en el gráfico.
+    producto: String(base.producto || '').trim(),
+    formato: String(base.formato || '').trim(),
+    global: num(base.global),
+    parcial1: num(base.parcial1),
+    tono: num(base.tono),
+    m2: num(base.m2),
+    vacioHorno: num(base.vacioHorno),
+    segunda: num(base.segunda),
+    rotura: num(base.rotura),
+    defectos: defs(base.defectos),
+    roturas: rots(base.roturas),
+    acciones: texts(base.acciones),
+    fotos: imgs(base.fotos),
+    enviada: base.enviada === true
+  };
+}
+
+/**
+ * Catálogo de defectos de calidad (abreviatura + nombre) a nivel planta, común
+ * a todos los turnos. Se auto-completa: cuando el auditor escribe un código
+ * nuevo, se guarda para ofrecerlo luego en un datalist (ver guardarDefectoCalidadSiEsNuevo).
+ * Se siembra con las abreviaturas típicas la primera vez.
+ */
+const DEFECTOS_CALIDAD_INICIALES = [
+  { codigo: 'GL', nombre: 'Grieta lateral' },
+  { codigo: 'SB', nombre: 'Sopladura' },
+  { codigo: 'SE', nombre: 'Separación' },
+  { codigo: 'BS', nombre: 'Baja selección' },
+  { codigo: 'DTE', nombre: 'Despunte' },
+  { codigo: 'B', nombre: 'Bache' },
+  { codigo: 'GI', nombre: 'Grieta interna' },
+  { codigo: 'T', nombre: 'Tono' }
+];
+
+/** Devuelve el catálogo de defectos de calidad (sembrándolo la primera vez). */
+export function catalogoDefectosCalidad() {
+  if (!Array.isArray(db.defectosCalidad) || !db.defectosCalidad.length) {
+    db.defectosCalidad = DEFECTOS_CALIDAD_INICIALES.map(d => ({ ...d }));
+  }
+  return db.defectosCalidad;
+}
+
+/**
+ * Guarda un defecto de calidad en el catálogo si el código todavía no existe.
+ * @param {string} codigo  abreviatura (GL, DTE, ...)
+ * @param {string} nombre  nombre completo opcional
+ */
+export function guardarDefectoCalidadSiEsNuevo(codigo, nombre = '') {
+  const cod = String(codigo || '').trim();
+  if (!cod) return;
+  const cat = catalogoDefectosCalidad();
+  const existe = cat.find(d => d.codigo.toLowerCase() === cod.toLowerCase());
+  if (existe) {
+    if (nombre && !existe.nombre) existe.nombre = nombre.trim();
+  } else {
+    cat.push({ codigo: cod, nombre: (nombre || '').trim() });
+  }
+  persistir();
+}
+
 /** Garantiza que la sesión tenga la estructura de objetivos por línea, migrando datos viejos si hace falta. */
 export function asegurarObjetivosSesion(s) {
   if (!s.objetivos) s.objetivos = {};
@@ -208,13 +343,29 @@ export function asegurarObjetivosSesion(s) {
         // de producción del DÍA (db.produccionDia), no de acá.
         lecturasQuemado: Array(3).fill(null).map(() => ({ hora: '', real: 0 })),
         // Objetivo dinámico de m²/turno, calculado a partir de los eventos del día.
-        produccionProyectada: 0
+        produccionProyectada: 0,
+        // --- CALIDAD (planilla del auditor de calidad) ---
+        operarioCalidad: '',
+        observacionesCalidad: '', // texto libre: observaciones generales del turno
+        tomasCalidad: Array(8).fill(null).map(() => crearTomaCalidad())
       };
     } else {
       const o = s.objetivos.porLinea[l.id];
       if (typeof o.rendimientoObj !== 'number') o.rendimientoObj = 0;
       if (!Array.isArray(o.lecturasCalidad)) {
         o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
+      }
+      // Migración/normalización de la planilla de calidad por tomas.
+      if (typeof o.operarioCalidad !== 'string') o.operarioCalidad = o.auditor || '';
+      if (typeof o.observacionesCalidad !== 'string') o.observacionesCalidad = '';
+      if (!Array.isArray(o.tomasCalidad) || !o.tomasCalidad.length) {
+        // Sembrar tomas desde las lecturas viejas (hora/global/parcial) si existían.
+        const previas = (o.lecturasCalidad || []).filter(x => x && (x.hora || x.global != null || x.parcial != null));
+        o.tomasCalidad = previas.length
+          ? previas.map(x => crearTomaCalidad({ hora: x.hora || '', global: x.global, parcial1: x.parcial }))
+          : Array(8).fill(null).map(() => crearTomaCalidad());
+      } else {
+        o.tomasCalidad = o.tomasCalidad.map(t => crearTomaCalidad(t));
       }
 
       // lecturasQuemado se normaliza a solo {hora, real}.

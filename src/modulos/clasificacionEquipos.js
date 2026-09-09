@@ -10,6 +10,7 @@
 import { db, persistir } from '../nucleo/almacenamiento.js';
 import { esc } from '../nucleo/utilidades.js';
 import { lineaPorId, equipoPorNombre, tipoEquipo, EQUIPOS_INICIALES } from '../nucleo/estado.js';
+import { areaDelRol } from '../nucleo/roles.js';
 
 // Catálogo precargado de motivos según tipología de máquina.
 // Se combina en tiempo real con los motivos nuevos que van cargando
@@ -26,9 +27,12 @@ export const motivos = {
 /** Carga el select de equipos según la línea elegida, y encadena la actualización de sub-equipo y motivos. */
 export function cargarEquipos(linea, equipoSel = '') {
   const lineaConfig = lineaPorId(linea);
+  // Solo equipos del área del rol: producción no ve el Qualitron (calidad) y
+  // viceversa. Admin/supervisor (area null) ven todos. GENERAL es común.
+  const area = areaDelRol();
   const lista = linea === 'GENERAL'
     ? EQUIPOS_INICIALES.GENERAL.map((nombre, i) => ({ id: `GENERAL-E${i + 1}`, nombre, tipo: 'General' }))
-    : (lineaConfig?.equipos.filter(e => e.activo !== false) || []);
+    : (lineaConfig?.equipos.filter(e => e.activo !== false && (!area || (e.area || 'produccion') === area)) || []);
   document.getElementById('pEquipo').innerHTML = lista.map(x =>
     `<option value="${esc(x.nombre)}" data-equipo-id="${esc(x.id)}" ${x.nombre === equipoSel ? 'selected' : ''}>${esc(x.nombre)}</option>`
   ).join('');

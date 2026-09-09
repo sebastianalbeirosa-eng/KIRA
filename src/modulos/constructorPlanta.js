@@ -19,9 +19,22 @@
 
 import { db, persistir, crearId } from '../nucleo/almacenamiento.js';
 import { valor, esc, abrir, cerrar } from '../nucleo/utilidades.js';
-import { lineaPorId, normalizarEquipoHistorico, actualizarIndiceEquipos } from '../nucleo/estado.js';
+import { lineaPorId, normalizarEquipoHistorico, actualizarIndiceEquipos, areaEquipo } from '../nucleo/estado.js';
 import { renderTodo } from './vistaDePlanta.js';
 import { refrescarSelectoresLineas } from '../app.js';
+import { areaDelRol } from '../nucleo/roles.js';
+
+/**
+ * Equipos de una línea que el rol actual puede ver/editar en el Constructor.
+ * Calidad ve solo equipos de calidad (Qualitron); producción solo los suyos;
+ * admin/supervisor (areaDelRol()===null) ven todos. Así, si calidad elimina o
+ * agrega equipos, no toca los de producción y viceversa.
+ */
+function equiposVisiblesConstructor(linea) {
+  const area = areaDelRol();
+  if (!area) return linea.equipos;
+  return linea.equipos.filter(e => (e.area || 'produccion') === area);
+}
 
 // Recuerda qué línea está seleccionada en el panel del Constructor.
 let lineaConstructorSeleccionada = '';
@@ -76,14 +89,27 @@ export function renderEquiposConstructor() {
     return;
   }
 
+  // El rol calidad no administra equipos (los maneja producción): usa el
+  // Constructor solo para crear/gestionar líneas donde luego carga su planilla.
+  if (areaDelRol() === 'calidad') {
+    document.getElementById('tituloEquiposConstructor').textContent = `Equipos · ${linea.nombre}`;
+    document.getElementById('detalleLineaConstructor').textContent = 'Los equipos de la línea los administra producción. Calidad usa las líneas para cargar su planilla.';
+    btn.disabled = true;
+    btn.classList.add('hidden');
+    cont.innerHTML = '<p class="text-xs text-slate-500 italic p-3">Esta línea ya queda disponible en "Área monitoreada" para cargar la planilla de calidad.</p>';
+    return;
+  }
+
+  // Solo los equipos del área del rol (producción ve los suyos).
+  const visibles = equiposVisiblesConstructor(linea);
   document.getElementById('tituloEquiposConstructor').textContent = `Equipos · ${linea.nombre}`;
-  document.getElementById('detalleLineaConstructor').textContent = `${linea.equipos.length} equipos configurados · el orden coincide con el sinóptico.`;
+  document.getElementById('detalleLineaConstructor').textContent = `${visibles.length} equipos configurados · el orden coincide con el sinóptico.`;
   btn.disabled = linea.activa === false;
 
-  cont.innerHTML = linea.equipos.length ? `
+  cont.innerHTML = visibles.length ? `
     <table class="table w-full text-xs text-slate-800">
       <thead><tr><th>Orden</th><th>Equipo</th><th>Tipo</th><th>Estado</th><th class="no-print">Acciones</th></tr></thead>
-      <tbody>${linea.equipos.map((e, idx) => `
+      <tbody>${visibles.map((e, idx) => `
         <tr>
           <td class="whitespace-nowrap font-bold">EQ-${String(idx + 1).padStart(2, '0')}</td>
           <td><b>${esc(e.nombre)}</b></td>
@@ -91,14 +117,14 @@ export function renderEquiposConstructor() {
           <td><span class="badge ${e.activo !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}">${e.activo !== false ? 'ACTIVO' : 'ARCHIVADO'}</span></td>
           <td class="no-print whitespace-nowrap">
             <button class="text-slate-600 font-bold mr-2" onclick="moverEquipo('${linea.id}','${e.id}',-1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
-            <button class="text-slate-600 font-bold mr-2" onclick="moverEquipo('${linea.id}','${e.id}',1)" ${idx === linea.equipos.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="text-slate-600 font-bold mr-2" onclick="moverEquipo('${linea.id}','${e.id}',1)" ${idx === visibles.length - 1 ? 'disabled' : ''}>↓</button>
             <button class="text-sky-700 font-bold mr-2" onclick="abrirEditorEquipo('${e.id}')">Editar</button>
             <button class="${e.activo !== false ? 'text-rose-700' : 'text-emerald-700'} font-bold" onclick="alternarEquipo('${linea.id}','${e.id}')">${e.activo !== false ? 'Eliminar' : 'Restaurar'}</button>
           </td>
         </tr>
       `).join('')}</tbody>
     </table>
-  ` : '<p class="text-xs text-slate-500 italic p-3">Esta línea todavía no tiene equipos.</p>';
+  ` : '<p class="text-xs text-slate-500 italic p-3">Esta línea todavía no tiene equipos de esta área.</p>';
 }
 
 /** Abre el modal del Constructor en modo "línea" (alta si id vacío, edición si viene con id). */
@@ -158,7 +184,10 @@ export function guardarElementoPlanta(e) {
       equipo.nombre = nombre;
       equipo.tipo = valor('cTipo');
     } else {
-      linea.equipos.push({ id: crearId('EQ'), nombre, tipo: valor('cTipo'), activo: true });
+      // El equipo nuevo hereda el área del rol que lo crea (calidad o
+      // producción). Para admin (sin área fija) se deduce del nombre.
+      const area = areaDelRol() || areaEquipo(nombre);
+      linea.equipos.push({ id: crearId('EQ'), nombre, tipo: valor('cTipo'), area, activo: true });
     }
   }
 
@@ -175,12 +204,24 @@ export function moverLinea(id, delta) {
   sincronizarPlanta();
 }
 
-/** Mueve un equipo una posición hacia arriba o abajo dentro de su línea. */
+/**
+ * Mueve un equipo una posición hacia arriba o abajo dentro de su línea.
+ * El movimiento es relativo a los equipos VISIBLES del área del rol: se
+ * intercambia con el vecino visible más cercano, para que reordenar en el
+ * panel de calidad no altere la posición de los equipos de producción.
+ */
 export function moverEquipo(lineaId, equipoId, delta) {
-  const arr = lineaPorId(lineaId)?.equipos;
+  const linea = lineaPorId(lineaId);
+  const arr = linea?.equipos;
   if (!arr) return;
-  const i = arr.findIndex(e => e.id === equipoId), destino = i + delta;
-  if (i < 0 || destino < 0 || destino >= arr.length) return;
+  const visibles = equiposVisiblesConstructor(linea);
+  const vIdx = visibles.findIndex(e => e.id === equipoId);
+  const vDest = vIdx + delta;
+  if (vIdx < 0 || vDest < 0 || vDest >= visibles.length) return;
+  // Traducir posiciones visibles a índices reales dentro de linea.equipos.
+  const i = arr.findIndex(e => e.id === equipoId);
+  const destino = arr.findIndex(e => e.id === visibles[vDest].id);
+  if (i < 0 || destino < 0) return;
   [arr[i], arr[destino]] = [arr[destino], arr[i]];
   sincronizarPlanta();
 }

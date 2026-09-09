@@ -1339,3 +1339,13 @@ body {
   font-size: 0.75rem;
   color: #94a3b8;
 }
+
+
+/* ============================================ */
+/* MODO SOLO-LECTURA (rol supervisor/monitor) */
+/* Oculta las acciones editables (eliminar, etc.) cuando el usuario logueado
+   es de solo visualización. Los botones se marcan con .accion-editable. */
+/* ============================================ */
+body.rol-solo-lectura .accion-editable {
+  display: none !important;
+}

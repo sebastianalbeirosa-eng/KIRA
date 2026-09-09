@@ -27,7 +27,7 @@
 */
 
 import { db, persistir } from './nucleo/almacenamiento.js';
-import { asegurarModeloPlanta, sesion, lineasActivas } from './nucleo/estado.js';
+import { asegurarModeloPlanta, sesion, lineasActivas, asegurarObjetivosSesion } from './nucleo/estado.js';
 import { valor, esc, hoyLocal } from './nucleo/utilidades.js';
 
 import { renderTodo, renderVistaPlanta } from './modulos/vistaDePlanta.js';
@@ -35,6 +35,8 @@ import { renderAnalisis } from './modulos/graficosYAnalisis.js';
 import { renderHistorico } from './modulos/historicos.js';
 import { renderConstructor } from './modulos/constructorPlanta.js';
 import { determinarTurnoAutomatico, detectarNuevoTurno } from './modulos/gestionTurno.js';
+import { permisosActuales, puedeVerTab, areaDelRol } from './nucleo/roles.js';
+import { renderUsuarios } from './modulos/gestionUsuarios.js';
 
 // ==========================================================
 // GESTIÓN DE SESIÓN DE USUARIO
@@ -155,15 +157,66 @@ asegurarModeloPlanta();
  * renders de CASI TODOS los módulos de features.
  */
 export function mostrarTab(tab) {
-  ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca'].forEach(x => {
-    document.getElementById('vista' + x[0].toUpperCase() + x.slice(1)).classList.toggle('hidden', x !== tab);
-    document.getElementById('tab' + x[0].toUpperCase() + x.slice(1)).className = `side-link ${x === tab ? 'active' : ''}`;
+  // Control de acceso: si el rol no puede ver esa pestaña, se redirige a la
+  // pestaña inicial de su rol (defensa por si se llama mostrarTab a mano).
+  if (!puedeVerTab(tab)) {
+    tab = permisosActuales().tabInicial;
+  }
+  ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca', 'usuarios'].forEach(x => {
+    const vista = document.getElementById('vista' + x[0].toUpperCase() + x.slice(1));
+    const boton = document.getElementById('tab' + x[0].toUpperCase() + x.slice(1));
+    if (vista) vista.classList.toggle('hidden', x !== tab);
+    if (boton) boton.className = `side-link ${x === tab ? 'active' : ''}`;
   });
-  document.getElementById('headerOperativo').classList.toggle('hidden', tab === 'acerca');
+  document.getElementById('headerOperativo').classList.toggle('hidden', tab === 'acerca' || tab === 'usuarios');
   if (tab === 'planta') renderVistaPlanta();
   if (tab === 'historico') renderHistorico();
   if (tab === 'analisis') renderAnalisis();
   if (tab === 'constructor') renderConstructor();
+  if (tab === 'usuarios') renderUsuarios();
+}
+
+/**
+ * Aplica los permisos del rol al menú lateral: oculta los botones de las
+ * pestañas que el rol no puede ver y abre su pestaña inicial. Se llama una
+ * vez al arrancar la app, después de conocer el rol de la sesión.
+ */
+export function aplicarPermisosMenu() {
+  const permisos = permisosActuales();
+
+  // 1) Pestañas del menú lateral según el rol.
+  ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca', 'usuarios'].forEach(x => {
+    const boton = document.getElementById('tab' + x[0].toUpperCase() + x.slice(1));
+    if (boton) boton.classList.toggle('hidden', !permisos.tabs.includes(x));
+  });
+
+  // 2) Elementos marcados con data-cap="...": visibles solo si el rol tiene
+  //    esa capacidad. Sirve para separar la carga de datos (calidad vs
+  //    producción) dentro de una misma pestaña.
+  document.querySelectorAll('[data-cap]').forEach(el => {
+    const cap = el.getAttribute('data-cap');
+    el.classList.toggle('hidden', !permisos.caps[cap]);
+  });
+
+  // 3) Modo solo-lectura (supervisor): marca el body para que el CSS oculte
+  //    los botones/acciones editables (ej. "Eliminar" en el histórico).
+  document.body.classList.toggle('rol-solo-lectura', !!permisos.caps.soloLectura);
+
+  // 3b) Título del header según el rol: calidad ve "Control de Calidad".
+  const tit = document.getElementById('tituloApp');
+  const sub = document.getElementById('subtituloApp');
+  if (tit && sub) {
+    if (areaDelRol() === 'calidad') {
+      tit.textContent = 'Control de Calidad';
+      sub.textContent = 'Monitoreo de Defectos y Desvíos';
+    } else {
+      tit.textContent = 'Control Operativo de Producción';
+      sub.textContent = 'Gestión de paradas, vacío de horno y acciones correctivas';
+    }
+  }
+
+  // 4) Abrir la pestaña inicial del rol.
+  mostrarTab(permisos.tabInicial);
 }
 
 /**
@@ -173,9 +226,34 @@ export function mostrarTab(tab) {
 export function cambiarSesion() {
   const s = sesion();
   document.getElementById('supervisor').value = s.supervisor || '';
+  cargarCabeceraCalidad();
   renderTodo();
   if (!document.getElementById('vistaAnalisis').classList.contains('hidden')) renderAnalisis();
   if (!document.getElementById('vistaPlanta').classList.contains('hidden')) renderVistaPlanta();
+}
+
+/**
+ * Rellena los campos de cabecera propios del rol calidad (operario, producto,
+ * formato) desde la sesión. El operario es por línea (la monitoreada); el
+ * producto/formato son de la sesión. Se llama al cambiar sesión o de línea.
+ */
+export function cargarCabeceraCalidad() {
+  const s = sesion();
+  const lineaId = valor('lineaVista');
+  const lid = (lineaId && lineaId !== 'TODAS' && lineaId !== 'GENERAL') ? lineaId : (lineasActivas()[0]?.id || '');
+  asegurarObjetivosSesion(s);
+
+  // Producto/formato VIGENTE: se toma de las tomas de calidad (el último
+  // producto/formato cargado en una toma). Si aún no hay ninguno, cae al valor
+  // manual guardado en la sesión.
+  const vig = (lid && window.productoVigenteCalidad) ? window.productoVigenteCalidad(lid) : { producto: '', formato: '' };
+  const prodEl = document.getElementById('productoCabecera');
+  if (prodEl) prodEl.value = vig.producto || s.productoCalidad || '';
+  const fmtEl = document.getElementById('formatoCabecera');
+  if (fmtEl) fmtEl.value = vig.formato || s.formatoCalidad || '';
+
+  const opEl = document.getElementById('operarioCalidad');
+  if (opEl) opEl.value = (lid && s.objetivos?.porLinea?.[lid]?.operarioCalidad) || '';
 }
 
 /**
@@ -192,6 +270,25 @@ export function cambiarTurno() {
 export function guardarMeta() {
   const s = sesion();
   s.supervisor = valor('supervisor').trim();
+
+  // Campos de la cabecera propios del rol calidad (solo existen si están
+  // montados). Producto/formato de calidad se guardan a nivel sesión; el
+  // operario de calidad, en el objeto de calidad de la línea monitoreada.
+  const opEl = document.getElementById('operarioCalidad');
+  if (opEl) {
+    const lineaId = valor('lineaVista');
+    const lid = (lineaId && lineaId !== 'TODAS' && lineaId !== 'GENERAL') ? lineaId : (lineasActivas()[0]?.id || '');
+    if (lid) {
+      asegurarObjetivosSesion(s);
+      const o = s.objetivos?.porLinea?.[lid];
+      if (o) o.operarioCalidad = opEl.value.trim();
+    }
+  }
+  const prodEl = document.getElementById('productoCabecera');
+  if (prodEl) s.productoCalidad = prodEl.value.trim();
+  const fmtEl = document.getElementById('formatoCabecera');
+  if (fmtEl) s.formatoCalidad = fmtEl.value.trim();
+
   s.actualizada = new Date().toISOString();
   persistir();
 }
@@ -284,6 +381,9 @@ window.addEventListener('load', () => {
   }
 
   cambiarSesion();
+
+  // Adaptar el workspace (menú y pestaña inicial) al rol del usuario logueado.
+  aplicarPermisosMenu();
 });
 
 // ==========================================================
@@ -296,4 +396,5 @@ window.mostrarTab = mostrarTab;
 window.cambiarSesion = cambiarSesion;
 window.cambiarTurno = cambiarTurno;
 window.guardarMeta = guardarMeta;
+window.cargarCabeceraCalidad = cargarCabeceraCalidad;
 window.alternarSidebar = alternarSidebar;

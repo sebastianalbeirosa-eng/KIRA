@@ -80,7 +80,7 @@ export function renderHistorico() {
       <td class="text-center">${x.vacio} min</td>
       <td class="text-center">${esc(x.motivo)}</td>
       <td>${esc(x.obs || '')}</td>
-      <td class="no-print text-center"><button class="text-rose-600 font-bold hover:underline" onclick="eliminarParada('${x.fecha}','${esc(x.turno)}','${x.id}')">Eliminar</button></td>
+      <td class="no-print text-center"><button class="accion-editable text-rose-600 font-bold hover:underline" onclick="eliminarParada('${x.fecha}','${esc(x.turno)}','${x.id}')">Eliminar</button></td>
     </tr>
   `).join('') : '<tr><td colspan="11" class="text-center text-slate-500">Sin registros para el filtro seleccionado.</td></tr>';
 
@@ -105,7 +105,7 @@ export function renderHistorico() {
       <td class="text-center"><b>${esc(x.equipo)}</b></td>
       <td>${esc(x.detalle)}</td>
       <td class="text-center">${esc(x.responsable || '—')}</td>
-      <td class="no-print text-center"><button class="text-rose-600 font-bold hover:underline" onclick="eliminarAccionHistorico('${x.fecha}','${esc(x.turno)}','${x.id}')">Eliminar</button></td>
+      <td class="no-print text-center"><button class="accion-editable text-rose-600 font-bold hover:underline" onclick="eliminarAccionHistorico('${x.fecha}','${esc(x.turno)}','${x.id}')">Eliminar</button></td>
     </tr>
   `).join('') : '<tr><td colspan="8" class="text-center text-slate-500">Sin registros para el filtro seleccionado.</td></tr>';
 
@@ -130,7 +130,7 @@ export function renderHistorico() {
       <td class="text-center">${x.porcentaje}%</td>
       <td>${esc(x.accion || '')}</td>
       <td>${esc(x.obs || '')}</td>
-      <td class="no-print text-center"><button class="text-rose-600 font-bold hover:underline" onclick="eliminarDefectoHistorico('${x.fecha}','${esc(x.turno)}','${x.id}')">Eliminar</button></td>
+      <td class="no-print text-center"><button class="accion-editable text-rose-600 font-bold hover:underline" onclick="eliminarDefectoHistorico('${x.fecha}','${esc(x.turno)}','${x.id}')">Eliminar</button></td>
     </tr>
   `).join('') : '<tr><td colspan="8" class="text-center text-slate-500">Sin registros para el filtro seleccionado.</td></tr>';
 }

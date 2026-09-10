@@ -614,6 +614,17 @@ body {
   padding: 2mm;
 }
 
+/* Separador de TOMA dentro de las tablas de defectos del ASAKAI. */
+.asakai-table .asakai-toma-sep {
+  background: #e0f2fe;
+  color: #075985;
+  font-weight: 800;
+  font-size: 8.5pt;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  padding: 1.2mm 2mm;
+}
+
 
 /* ==========================================================
    ACCIONES
@@ -924,16 +935,22 @@ body {
   right: 22px;
   bottom: 88px;
   width: 360px;
-  max-width: calc(100vw - 44px);
   height: 480px;
-  max-height: 70vh;
+  /* Redimensionable con el mouse (arrastrando la esquina inferior derecha).
+     Como está anclado a right/bottom, al agrandar crece hacia arriba/izquierda.
+     min/max evitan que quede inservible o tape toda la pantalla. */
+  resize: both;
+  overflow: auto;
+  min-width: 300px;
+  min-height: 320px;
+  max-width: calc(100vw - 44px);
+  max-height: calc(100vh - 100px);
   background: #fff;
   border: 1px solid #d7e0e9;
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(15, 36, 56, .18);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   z-index: 60;
 }
 

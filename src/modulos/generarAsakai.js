@@ -1,19 +1,17 @@
 /* ========================================================== */
-/* GENERAR-ASAKAI.JS — Reporte PDF de reunión ASAKAI           */
+/* GENERAR-ASAKAI.JS — Reporte ASAKAI por rol (imprimible)     */
 /* ========================================================== */
 /*
-  Genera el reporte ASAKAI (A4, una hoja por línea) que se imprime
-  vía window.print(). También controla la impresión simple de la
-  vista actual (imprimirVista).
+  Genera el reporte ASAKAI (A4 landscape, una hoja por línea) que
+  se imprime vía window.print(). El contenido depende del ROL:
 
-  ✅ BUG CORREGIDO: antes, paginaAsakaiUnaHoja() no recalculaba los
-  KPIs industriales (disponibilidad, calidad, EGE, rendimiento) —
-  leía el texto ya renderizado en el DOM de #vpKpis, que solo se
-  llenaba si el usuario había visitado antes la pestaña "Vista de
-  Planta" en esa sesión. Ahora usa calcularKpisPlanta() (una función
-  pura, sin DOM, que vive en vistaDePlanta.js) para recalcular los
-  mismos números directamente desde los datos de la sesión — así el
-  ASAKAI funciona sin importar qué pestaña visitó el usuario antes.
+    - PRODUCCIÓN: KPIs de parada/vacío/quemados, tabla de paradas
+      con vacíos, acciones correctivas y observaciones.
+    - CALIDAD: KPIs de calidad/tono/rotura, tabla de defectos con
+      su acción de producción, tono/m²/rotura/2da por toma y
+      observaciones de calidad.
+
+  También controla la impresión simple de la vista (imprimirVista).
 */
 
 import { valor, esc, fmtFecha } from '../nucleo/utilidades.js';
@@ -22,260 +20,31 @@ import {
   asegurarObjetivosSesion, asegurarProduccionSesion
 } from '../nucleo/estado.js';
 import { asegurarNotaTurno } from './notasTurno.js';
-import { asegurarDefectosSesion } from './gestionDefectos.js';
-import { metricas, calcularKpisPlanta } from './vistaDePlanta.js';
+import { calcularKpisPlanta } from './vistaDePlanta.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
+import { areaDelRol } from '../nucleo/roles.js';
 import { guardarMeta } from '../app.js';
 
-function paginaAsakaiUnaHoja(linea) {
+/** Una tarjeta KPI del encabezado del reporte. */
+function kpi(label, valor) {
+  return `<div class="asakai-kpi"><span>${esc(label)}</span><strong>${esc(valor)}</strong></div>`;
+}
+
+/** Encabezado común del reporte (marca + meta). */
+function htmlHeader(linea, tituloReporte, prod) {
   const s = sesion();
-
-  asegurarNotaTurno(s);
-  asegurarDefectosSesion(s);
-  asegurarObjetivosSesion(s);
-  asegurarProduccionSesion(s);
-
-  // --------------------------------------------------------
-  // DATOS DE CONTEXTO
-  // --------------------------------------------------------
-
-  const prod = s.productoPorLinea?.[linea.id] || {
-    producto: '',
-    formato: ''
-  };
-
-  const paradasLinea = s.paradas.filter(x => x.linea === linea.id);
-  const defectosLinea = s.defectos.filter(x => x.linea === linea.id);
-  const accionesLinea = s.acciones.filter(x => x.linea === linea.id);
-
-  // --------------------------------------------------------
-  // RECALCULAR LOS KPIs INDUSTRIALES PARA ESTA LÍNEA
-  //
-  // Usa la misma función pura que usa Vista de Planta en pantalla
-  // (calcularKpisPlanta), así los dos lugares SIEMPRE muestran el
-  // mismo número — sin depender de que el usuario haya visitado
-  // antes esa pestaña.
-  // --------------------------------------------------------
-
-  const kpis = calcularKpisPlanta(linea.id);
-
-  const kpiParada = { valor: `${kpis.m.parada} min` };
-  const kpiVacio = { valor: `${kpis.m.vacio} min` };
-  const kpiCritica = {
-    valor: kpis.maquinaCritica
-      ? `${kpis.maquinaCritica.equipo} — ${kpis.maquinaCritica.mins} min · ${kpis.nivelCritica.label}`
-      : 'Sin datos'
-  };
-  const kpiDefecto = {
-    valor: kpis.defectoPreponderante
-      ? `${kpis.defectoPreponderante.nombre} — ${kpis.defectoPreponderante.porcentaje}% · ${kpis.nivelDefecto.label}`
-      : 'Sin defectos'
-  };
-  const kpiDisponibilidad = { valor: `${kpis.m.disponibilidad.toFixed(1)}%` };
-  const kpiRendimiento = {
-    valor: kpis.rendimientoPct === null ? 'N/D' : kpis.rendimientoPct.toFixed(1) + '%'
-  };
-  const kpiCalidad = { valor: `${kpis.calidadReal.toFixed(1)}%` };
-  const kpiEge = { valor: `${kpis.egeTurno.toFixed(1)}%` };
-
-  // --------------------------------------------------------
-  // MÁQUINAS
-  //
-  // Esto NO calcula indicadores.
-  // Solo prepara los registros existentes para mostrarlos.
-  // --------------------------------------------------------
-
-  // --------------------------------------------------------
-  // MÁQUINAS
-  //
-  // Solo se listan las que tuvieron al menos un registro de
-  // parada (con o sin minutos de vacío). No calcula indicadores.
-  // --------------------------------------------------------
-
-  const equiposActivos = linea.equipos.filter(
-    e => e.activo !== false
-  );
-
-  const equiposConParadas = equiposActivos
-    .map(eqConfig => {
-      const regs = paradasLinea.filter(x =>
-        x.equipoId
-          ? x.equipoId === eqConfig.id
-          : normalizarEquipoHistorico(x.equipo) === eqConfig.nombre
-      );
-      return { eqConfig, regs };
-    })
-    .filter(x => x.regs.length > 0);
-
-  const filasEquipos = equiposConParadas.map(({ eqConfig, regs }, idx) => {
-
-    const minutosTexto = regs.map(x => Number(x.minutos) || 0).join(' + ');
-    const vaciosTexto = regs.map(x => Number(x.vacio) || 0).join(' + ');
-
-    const principal = [...regs].sort(
-      (a, b) => (Number(b.minutos) || 0) - (Number(a.minutos) || 0)
-    )[0];
-
-    return `
-      <tr>
-        <td>${idx + 1}</td>
-
-        <td class="machine-name">
-          ${esc(eqConfig.nombre)}
-        </td>
-
-        <td class="center strong">
-          ${esc(minutosTexto)}
-        </td>
-
-        <td class="center">
-          ${esc(vaciosTexto)}
-        </td>
-
-        <td>
-          ${esc(principal.motivo)}
-        </td>
-
-        <td>
-          ${esc(principal.obs || '')}
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  // --------------------------------------------------------
-  // DEFECTOS
-  // --------------------------------------------------------
-
-  const filasDefectos = defectosLinea.length
-    ? defectosLinea.map((x, i) => `
-        <tr>
-          <td class="center">${i + 1}</td>
-
-          <td class="strong">
-            ${esc(x.nombre)}
-          </td>
-
-          <td class="center strong">
-            ${esc(x.porcentaje)}%
-          </td>
-
-          <td>
-            ${esc(x.accion || 'Sin acción correctiva registrada')}
-          </td>
-        </tr>
-      `).join('')
-    : `
-      <tr>
-        <td colspan="4" class="empty">
-          No hay defectos registrados.
-        </td>
-      </tr>
-    `;
-
-  // --------------------------------------------------------
-  // ACCIONES CORRECTIVAS
-  // --------------------------------------------------------
-
-  const filasAcciones = accionesLinea.length
-    ? accionesLinea.slice(-8).map((x, i) => `
-        <tr>
-          <td class="center">${i + 1}</td>
-
-          <td class="center">
-            ${esc(x.hora || '')}
-          </td>
-
-          <td class="strong">
-            ${esc(x.equipo || '')}
-          </td>
-
-          <td>
-            ${esc(x.detalle || '')}
-          </td>
-
-          <td>
-            ${esc(x.responsable || '')}
-          </td>
-        </tr>
-      `).join('')
-    : `
-      <tr>
-        <td colspan="5" class="empty">
-          No hay acciones correctivas registradas.
-        </td>
-      </tr>
-    `;
-
-  // --------------------------------------------------------
-  // NOTA DEL SUPERVISOR
-  // --------------------------------------------------------
-
-  const notaSupervisor =
-    s.notaTurno ||
-    'Sin observaciones manuales.';
-
-  // --------------------------------------------------------
-  // NOTA DEL TURNO — análisis automático de la línea
-  // (mismo criterio que el panel "Nota del turno" de Vista de Planta)
-  // --------------------------------------------------------
-
-  const mLinea = metricas(paradasLinea);
-  const objVacioMax = s.objetivos.porLinea[linea.id]?.vacioMax || 30;
-  const defectoTop = [...defectosLinea].sort((a, b) => b.porcentaje - a.porcentaje)[0];
-
-  // Reutiliza kpis.maquinaCritica (mismo criterio que las tarjetas de
-  // arriba y que Vista de Planta), en vez de tomar la parada individual
-  // más grande — así "afectación destacada" siempre coincide con lo que
-  // dice la tarjeta "MÁQUINA CRÍTICA" del mismo reporte.
-  const maquinaTop = kpis.maquinaCritica;
-  const motivosDeLaCritica = maquinaTop
-    ? kpis.filasMapaCalor
-        .filter(f => f.equipo === maquinaTop.equipo && f.lineaNombre === maquinaTop.lineaNombre)
-        .sort((a, b) => b.mins - a.mins)
-    : [];
-
-  const fraseAfectacion = !maquinaTop
-    ? 'Sin paradas relevantes registradas en este turno.'
-    : motivosDeLaCritica.length > 1
-      ? `Afectación destacada en <b>${esc(maquinaTop.equipo)}</b> por ${motivosDeLaCritica.map(f => `${esc(f.motivo)} ${f.mins} min`).join(', ')}, llevando un acumulado de ${maquinaTop.mins} min.`
-      : `Afectación destacada en <b>${esc(maquinaTop.equipo)}</b> por "${esc(maquinaTop.motivo)}" (${maquinaTop.mins} min).`;
-
-  const frasesAuto = [
-    fraseAfectacion,
-    ...(mLinea.vacio > objVacioMax ? [`Vacío de horno por encima del objetivo (${mLinea.vacio} min vs ${objVacioMax} min).`] : []),
-    ...(defectoTop ? [`Defecto de calidad más relevante: <b>${esc(defectoTop.nombre)}</b> (${defectoTop.porcentaje}%).`] : []),
-    mLinea.disponibilidad < 85 ? 'Se recomienda seguimiento y generar plan de acción.' : 'Disponibilidad dentro de objetivo, sin acciones urgentes pendientes.'
-  ];
-
-  // --------------------------------------------------------
-  // HTML DEL REPORTE
-  // --------------------------------------------------------
-
   return `
-  <article class="asakai-sheet">
-
-    <!-- ====================================================
-         ENCABEZADO
-         ==================================================== -->
-
-   <header class="asakai-header">
-
+    <header class="asakai-header">
       <div class="asakai-brand">
-      
-
         <div>
           <div class="asakai-brand-name">KIRA</div>
           <div class="asakai-brand-subtitle">Industrial Software Platform</div>
         </div>
       </div>
-
       <div class="asakai-title">
-        <div>REPORTE ASAKAI</div>
+        <div>${esc(tituloReporte)}</div>
         <small>PLANTA CERÁMICA SAN JUAN</small>
       </div>
-
-      <!-- Metadatos unificados: fecha, turno, línea, supervisor, producto y formato -->
       <div class="asakai-meta">
         <div><b>FECHA</b>${esc(fmtFecha(valor('fecha')))}</div>
         <div><b>TURNO</b>${esc(valor('turno'))}</div>
@@ -284,364 +53,255 @@ function paginaAsakaiUnaHoja(linea) {
         <div><b>PRODUCTO</b>${esc(prod.producto || 'No especificado')}</div>
         <div><b>FORMATO</b>${esc(prod.formato || 'No especificado')}</div>
       </div>
+    </header>`;
+}
 
-    </header>
+// ==========================================================
+// ASAKAI DE PRODUCCIÓN
+// ==========================================================
+function paginaAsakaiProduccion(linea) {
+  const s = sesion();
+  asegurarNotaTurno(s);
+  asegurarObjetivosSesion(s);
+  asegurarProduccionSesion(s);
 
+  const prod = s.productoPorLinea?.[linea.id] || { producto: '', formato: '' };
+  const o = s.objetivos?.porLinea?.[linea.id] || {};
+  const kpis = calcularKpisPlanta(linea.id);
 
+  // Máquinas con paradas.
+  const paradasLinea = s.paradas.filter(x => x.linea === linea.id);
+  const equiposConParadas = linea.equipos.filter(e => e.activo !== false)
+    .map(eqConfig => ({
+      eqConfig,
+      regs: paradasLinea.filter(x => x.equipoId ? x.equipoId === eqConfig.id : normalizarEquipoHistorico(x.equipo) === eqConfig.nombre)
+    }))
+    .filter(x => x.regs.length > 0);
 
-    <!-- ====================================================
-         KPIs — MISMA INFORMACIÓN DE VISTA DE PLANTA
-         ==================================================== -->
+  const filasEquipos = equiposConParadas.map(({ eqConfig, regs }, idx) => {
+    const principal = [...regs].sort((a, b) => (Number(b.minutos) || 0) - (Number(a.minutos) || 0))[0];
+    const hora = regs.map(x => x.hora).filter(Boolean).slice(-1)[0] || '';
+    return `<tr><td>${idx + 1}</td><td class="machine-name">${esc(eqConfig.nombre)}</td><td class="center">${esc(hora)}</td><td class="center strong">${regs.map(x => Number(x.minutos) || 0).join(' + ')}</td><td class="center">${regs.map(x => Number(x.vacio) || 0).join(' + ')}</td><td>${esc(principal.motivo)}</td><td>${esc(principal.obs || '')}</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty">No hay máquinas con paradas registradas.</td></tr>`;
+
+  // Acciones correctivas.
+  const accionesLinea = s.acciones.filter(x => x.linea === linea.id);
+  const filasAcciones = accionesLinea.length
+    ? accionesLinea.slice(-10).map((x, i) => `<tr><td class="center">${i + 1}</td><td class="center">${esc(x.hora || '')}</td><td class="strong">${esc(x.equipo || '')}</td><td>${esc(x.detalle || '')}</td><td>${esc(x.responsable || '')}</td></tr>`).join('')
+    : `<tr><td colspan="5" class="empty">No hay acciones correctivas registradas.</td></tr>`;
+
+  // Defectos que pasó calidad + la acción que tomó producción, SECCIONADOS
+  // por toma (cada toma enviada con defectos = un bloque de filas con su hora).
+  const tomasDef = (o.tomasCalidad || [])
+    .map((t, i) => ({ t, i }))
+    .filter(x => x.t.enviada === true && (x.t.defectos || []).some(d => (d.nombre || '').trim()))
+    .sort((a, b) => (a.t.hora || '').localeCompare(b.t.hora || ''));
+  let filasDefProd;
+  if (!tomasDef.length) {
+    filasDefProd = `<tr><td colspan="4" class="empty">Calidad aún no envió defectos.</td></tr>`;
+  } else {
+    filasDefProd = tomasDef.map((x, idx) => {
+      const t = x.t;
+      const sep = `<tr><td colspan="4" class="asakai-toma-sep">TOMA ${idx + 1}${t.hora ? ' · ' + esc(t.hora) + ' hs' : ''}</td></tr>`;
+      const filas = (t.defectos || []).filter(d => (d.nombre || '').trim()).map(d =>
+        `<tr><td class="strong">${esc(d.nombre)}</td><td class="center strong">${d.pct ?? '—'}%</td><td>${esc(d.aclaracion || '')}</td><td>${esc(d.accionProd || 'Sin acción')}</td></tr>`).join('');
+      return sep + filas;
+    }).join('');
+  }
+
+  const notaProd = (s.notaTurno || '').trim() || 'Sin observaciones.';
+
+  return `
+  <article class="asakai-sheet">
+    ${htmlHeader(linea, 'REPORTE ASAKAI · PRODUCCIÓN', prod)}
 
     <section class="asakai-kpis">
-
-      <div class="asakai-kpi">
-        <span>MINUTOS DE PARADA</span>
-        <strong>${esc(kpiParada.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>VACÍO DE HORNO</span>
-        <strong>${esc(kpiVacio.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>MÁQUINA CRÍTICA</span>
-        <strong>${esc(kpiCritica.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>DEFECTO CRÍTICO</span>
-        <strong>${esc(kpiDefecto.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>DISPONIBILIDAD</span>
-        <strong>${esc(kpiDisponibilidad.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>RENDIMIENTO</span>
-        <strong>${esc(kpiRendimiento.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>CALIDAD</span>
-        <strong>${esc(kpiCalidad.valor)}</strong>
-      </div>
-
-      <div class="asakai-kpi">
-        <span>EFICIENCIA / EGE</span>
-        <strong>${esc(kpiEge.valor)}</strong>
-      </div>
-
+      ${kpi('MINUTOS DE PARADA', `${kpis.m.parada} min`)}
+      ${kpi('VACÍO DE HORNO', `${kpis.m.vacio} min`)}
+      ${kpi('MÁQUINA CRÍTICA', kpis.maquinaCritica ? `${kpis.maquinaCritica.equipo} · ${kpis.maquinaCritica.mins} min` : 'Sin datos')}
+      ${kpi('m² QUEMADOS', kpis.quemadoVal != null ? `${kpis.quemadoVal.toLocaleString('es-AR')} m²` : '—')}
+      ${kpi('CALIDAD GLOBAL', `${kpis.calidadReal.toFixed(1)}%`)}
+      ${kpi('CALIDAD PARCIAL', `${kpis.calidadParcial.toFixed(1)}%`)}
     </section>
 
-
-    <!-- ====================================================
-         CUERPO PRINCIPAL
-         ==================================================== -->
+    <section class="asakai-block asakai-machines">
+      <div class="asakai-block-title">ESTADO DE MÁQUINAS · PARADAS · VACÍOS</div>
+      <table class="asakai-table">
+        <thead><tr><th>#</th><th>Máquina</th><th>Hora</th><th>Parada</th><th>Vacío</th><th>Motivo principal</th><th>Observaciones</th></tr></thead>
+        <tbody>${filasEquipos}</tbody>
+      </table>
+    </section>
 
     <section class="asakai-main-grid">
-
-
-      <!-- ================================================
-           MÁQUINAS
-           ================================================ -->
-
-      <section class="asakai-block asakai-machines">
-
-        <div class="asakai-block-title">
-          ESTADO DE MÁQUINAS · PARADAS · VACÍOS
-        </div>
-
+      <section class="asakai-block asakai-actions">
+        <div class="asakai-block-title action-title">ACCIONES CORRECTIVAS Y MEJORAS</div>
         <table class="asakai-table">
-
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Máquina</th>
-              <th>Parada</th>
-              <th>Vacío</th>
-              <th>Motivo principal</th>
-              <th>Observaciones</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${
-  filasEquipos ||
-  `
-  <tr>
-    <td colspan="6" class="empty">
-      No hay máquinas con paradas registradas en este turno.
-    </td>
-  </tr>
-  `
-}
-          </tbody>
-
+          <thead><tr><th>#</th><th>Hora</th><th>Equipo</th><th>Acción realizada</th><th>Responsable</th></tr></thead>
+          <tbody>${filasAcciones}</tbody>
         </table>
-
       </section>
-
-
-      <!-- ================================================
-           DEFECTOS
-           ================================================ -->
-
       <section class="asakai-block asakai-quality">
-
-        <div class="asakai-block-title quality-title">
-          CALIDAD · DEFECTOS · ACCIONES
-        </div>
-
+        <div class="asakai-block-title quality-title">DEFECTOS DE CALIDAD · ACCIÓN DE PRODUCCIÓN</div>
         <table class="asakai-table">
-
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Defecto</th>
-              <th>%</th>
-              <th>Acción correctiva</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${filasDefectos}
-          </tbody>
-
+          <thead><tr><th>Defecto</th><th>%</th><th>Aclaración</th><th>Acción de producción</th></tr></thead>
+          <tbody>${filasDefProd}</tbody>
         </table>
-
       </section>
-
-
     </section>
-
-
-    <!-- ====================================================
-         ACCIONES CORRECTIVAS
-         ==================================================== -->
-
-    <section class="asakai-block asakai-actions">
-
-      <div class="asakai-block-title action-title">
-        ACCIONES CORRECTIVAS Y MEJORAS
-      </div>
-
-      <table class="asakai-table">
-
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Hora</th>
-            <th>Equipo</th>
-            <th>Acción realizada</th>
-            <th>Responsable</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          ${filasAcciones}
-        </tbody>
-
-      </table>
-
-    </section>
-
-
-    <!-- ====================================================
-         AYUDA / ANÁLISIS
-         ==================================================== -->
 
     <section class="asakai-bottom-grid">
-
-      <div class="asakai-analysis">
-
-        <div class="asakai-block-title help-title">
-          NOTA DEL TURNO
-        </div>
-
-        <div class="asakai-help-content">
-          ${frasesAuto.join(' ')}
-        </div>
-
-      </div>
-
-
       <div class="asakai-supervisor">
-
-        <div class="asakai-block-title supervisor-title">
-          OBSERVACIONES DEL SUPERVISOR
-        </div>
-
-        <div class="asakai-supervisor-note">
-          ${esc(notaSupervisor)}
-        </div>
-
+        <div class="asakai-block-title supervisor-title">OBSERVACIONES DE PRODUCCIÓN</div>
+        <div class="asakai-supervisor-note">${esc(notaProd)}</div>
       </div>
-
     </section>
 
-
-    <!-- ====================================================
-         PIE
-         ==================================================== -->
-
-    <footer class="asakai-footer">
-      <strong>DMBE Systems · 2026</strong>
-    </footer>
-
-  </article>
-  `;
+    <footer class="asakai-footer"><strong>DMBE Systems · 2026</strong></footer>
+  </article>`;
 }
 
+// ==========================================================
+// ASAKAI DE CALIDAD
+// ==========================================================
+function paginaAsakaiCalidad(linea) {
+  const s = sesion();
+  asegurarNotaTurno(s);
+  asegurarObjetivosSesion(s);
+  asegurarProduccionSesion(s);
 
+  const prod = s.productoPorLinea?.[linea.id] || { producto: '', formato: '' };
+  const o = s.objetivos?.porLinea?.[linea.id] || {};
+  const kpis = calcularKpisPlanta(linea.id);
+
+  // Tomas con datos (enviadas o con contenido).
+  const tomas = (o.tomasCalidad || []).filter(t =>
+    t.enviada === true || t.hora || t.global != null || (t.defectos || []).some(d => (d.nombre || '').trim()));
+
+  // Tabla de mediciones por toma.
+  const filasMed = tomas.length
+    ? tomas.map(t => `<tr><td class="center">${esc(t.hora || '—')}</td><td class="center strong">${t.global ?? '—'}</td><td class="center">${t.parcial1 ?? '—'}</td><td class="center">${t.tono ?? '—'}</td><td class="center">${t.m2 ?? '—'}</td><td class="center">${t.vacioHorno ?? '—'}</td><td class="center">${t.segunda ?? '—'}</td><td class="center">${t.rotura ?? '—'}</td></tr>`).join('')
+    : `<tr><td colspan="8" class="empty">Sin tomas de calidad registradas.</td></tr>`;
+
+  // Defectos con acción de producción, SECCIONADOS por toma (cada toma con
+  // defectos = un bloque separador con su hora, luego sus filas).
+  const tomasConDef = tomas
+    .map((t, i) => ({ t, i }))
+    .filter(x => (x.t.defectos || []).some(d => (d.nombre || '').trim()));
+  let htmlDef;
+  if (!tomasConDef.length) {
+    htmlDef = `<tr><td colspan="4" class="empty">No hay defectos registrados.</td></tr>`;
+  } else {
+    htmlDef = tomasConDef.map((x, idx) => {
+      const t = x.t;
+      const sep = `<tr><td colspan="4" class="asakai-toma-sep">TOMA ${idx + 1}${t.hora ? ' · ' + esc(t.hora) + ' hs' : ''}</td></tr>`;
+      const filas = (t.defectos || []).filter(d => (d.nombre || '').trim()).map(d =>
+        `<tr><td class="strong">${esc(d.nombre)}</td><td class="center strong">${d.pct ?? '—'}%</td><td>${esc(d.aclaracion || '')}</td><td>${esc(d.accionProd || 'Sin acción')}</td></tr>`).join('');
+      return sep + filas;
+    }).join('');
+  }
+
+  // Acumulado de % de 2da (suma de las tomas con dato).
+  const segundaAcum = tomas.reduce((a, t) => a + (Number(t.segunda) || 0), 0);
+
+  const notaCal = (o.observacionesCalidad || '').trim() || 'Sin observaciones.';
+
+  return `
+  <article class="asakai-sheet">
+    ${htmlHeader(linea, 'REPORTE ASAKAI · CALIDAD', prod)}
+
+    <section class="asakai-kpis">
+      ${kpi('CALIDAD', `${kpis.calidadReal.toFixed(1)}%`)}
+      ${kpi('PARCIAL', `${kpis.calidadParcial.toFixed(1)}%`)}
+      ${kpi('2da ACUMULADA', `${segundaAcum.toFixed(2)}%`)}
+      ${kpi('TONO', kpis.tonoVal != null ? String(kpis.tonoVal) : '—')}
+      ${kpi('m² CLASIFICADOS', kpis.clasifVal != null ? `${kpis.clasifVal.toLocaleString('es-AR')} m²` : '—')}
+      ${kpi('ROTURA', kpis.roturaVal != null ? `${kpis.roturaVal}%` : '—')}
+      ${kpi('DEFECTO CRÍTICO', kpis.defectoPreponderante ? `${kpis.defectoPreponderante.nombre} · ${kpis.defectoPreponderante.porcentaje}%` : 'Sin defectos')}
+      ${kpi('OPERARIO', o.operarioCalidad || '—')}
+    </section>
+
+    <section class="asakai-block">
+      <div class="asakai-block-title quality-title">MEDICIONES POR TOMA</div>
+      <table class="asakai-table">
+        <thead><tr><th>Hora</th><th>Global %</th><th>Parcial %</th><th>Tono</th><th>M²</th><th>Vacío horno</th><th>2da %</th><th>Rotura %</th></tr></thead>
+        <tbody>${filasMed}</tbody>
+      </table>
+    </section>
+
+    <section class="asakai-block asakai-quality">
+      <div class="asakai-block-title quality-title">DEFECTOS · ACCIÓN DE PRODUCCIÓN (por toma)</div>
+      <table class="asakai-table">
+        <thead><tr><th>Defecto</th><th>%</th><th>Aclaración</th><th>Acción de producción</th></tr></thead>
+        <tbody>${htmlDef}</tbody>
+      </table>
+    </section>
+
+    <section class="asakai-bottom-grid">
+      <div class="asakai-supervisor">
+        <div class="asakai-block-title supervisor-title">OBSERVACIONES DE CALIDAD</div>
+        <div class="asakai-supervisor-note">${esc(notaCal)}</div>
+      </div>
+    </section>
+
+    <footer class="asakai-footer"><strong>DMBE Systems · 2026</strong></footer>
+  </article>`;
+}
+
+/** Devuelve el HTML del reporte según el rol. */
+function paginaAsakaiUnaHoja(linea) {
+  return areaDelRol() === 'calidad' ? paginaAsakaiCalidad(linea) : paginaAsakaiProduccion(linea);
+}
+
+// ==========================================================
+// GENERACIÓN E IMPRESIÓN
+// ==========================================================
 function generarAsakai() {
   guardarMeta();
   const lineaSeleccionadaId = valor('lineaVista');
-
-  // AQUÍ ESTÁ LA LÍNEA SOLICITADA:
   if (lineaSeleccionadaId === 'TODAS') {
     mostrarAlertaKira('Para generar el reporte ASAKAI seleccione una línea específica en Área monitoreada.', 'Atención', 'error');
     return;
   }
   const lineaSeleccionada = lineaPorId(lineaSeleccionadaId);
-
   if (!lineaSeleccionada) {
-    alert('No se encontró la línea seleccionada.');
+    mostrarAlertaKira('No se encontró la línea seleccionada.', 'Atención', 'error');
     return;
   }
 
   const contenedorPrint = document.getElementById('printReport');
-
-  if (!contenedorPrint) {
-    alert('Error: No se encontró el contenedor printReport en el HTML.');
-    return;
-  }
-
-  // ========================================================
-  // GENERAR HTML DEL REPORTE
-  // ========================================================
+  if (!contenedorPrint) return;
 
   const htmlReporte = paginaAsakaiUnaHoja(lineaSeleccionada);
-
-  if (!htmlReporte || !htmlReporte.trim()) {
-    alert('Error: paginaAsakaiUnaHoja() no generó contenido.');
-    return;
-  }
-
-  // ========================================================
-  // INSERTAR REPORTE
-  // ========================================================
-
   contenedorPrint.innerHTML = htmlReporte;
-
-  // Forzar visualización del contenedor
   contenedorPrint.style.display = 'block';
   contenedorPrint.style.visibility = 'visible';
 
-  // ========================================================
-  // ACTIVAR MODO IMPRESIÓN
-  // ========================================================
-
   const tituloAnterior = document.title;
-
   document.title = 'Reporte ASAKAI';
-
   document.body.classList.add('print-report');
 
-  // ========================================================
-  // VERIFICACIÓN
-  // ========================================================
-
-  const hoja = contenedorPrint.querySelector('.asakai-sheet');
-
-  if (!hoja) {
-
-    console.error(
-      'ASAKAI: No se encontró .asakai-sheet dentro de #printReport'
-    );
-
-    console.log(
-      'HTML generado por paginaAsakaiUnaHoja():',
-      htmlReporte
-    );
-
-    alert(
-      'El reporte fue generado, pero no contiene el elemento .asakai-sheet. Revisaremos paginaAsakaiUnaHoja().'
-    );
-
-    document.body.classList.remove('print-report');
-    contenedorPrint.innerHTML = '';
-
-    return;
-  }
-
-  console.log('ASAKAI: reporte generado correctamente.');
-  console.log('ASAKAI: hoja encontrada:', hoja);
-
-  // ========================================================
-  // FORZAR ORIENTACIÓN HORIZONTAL SOLO PARA ESTA IMPRESIÓN
-  // ========================================================
-  // En vez de depender de "páginas @page nombradas" (soporte
-  // inconsistente entre versiones de Chrome), inyectamos una
-  // regla @page temporal con máxima especificidad posible: al
-  // insertarse DESPUÉS de todo el resto del CSS, gana la cascada
-  // sin ambigüedad. Se remueve apenas termina de imprimir, así
-  // la próxima vez que se use "Imprimir vista actual" (formato
-  // vertical) no queda pisada por esta regla.
+  // Orientación horizontal solo para este reporte (se remueve al terminar).
   const estiloOrientacion = document.createElement('style');
   estiloOrientacion.id = 'kiraOrientacionImpresion';
   estiloOrientacion.textContent = '@page { size: A4 landscape; margin: 0; }';
   document.head.appendChild(estiloOrientacion);
 
-  // ========================================================
-  // FINALIZAR IMPRESIÓN
-  // ========================================================
-
   const finalizarImpresion = () => {
-
     document.body.classList.remove('print-report');
-
     contenedorPrint.style.display = '';
     contenedorPrint.style.visibility = '';
-
     contenedorPrint.innerHTML = '';
-
     document.title = tituloAnterior;
-
-    // Sacamos la regla @page temporal para no afectar futuras
-    // impresiones normales (imprimirVista), que deben quedar en vertical.
     document.getElementById('kiraOrientacionImpresion')?.remove();
   };
+  window.addEventListener('afterprint', finalizarImpresion, { once: true });
 
-  window.addEventListener(
-    'afterprint',
-    finalizarImpresion,
-    { once: true }
-  );
-
-  // ========================================================
-  // IMPRIMIR
-  // ========================================================
-
-  requestAnimationFrame(() => {
-
-    requestAnimationFrame(() => {
-
-      window.print();
-
-    });
-
-  });
+  requestAnimationFrame(() => { requestAnimationFrame(() => { window.print(); }); });
 }
 
 /**
- * Llena la franja de contexto (fecha/turno/supervisor/línea) que
- * solo se ve al imprimir la vista normal — headerOperativo (que
- * tiene esos mismos datos) se oculta completo en la impresión
- * porque tiene botones y selects que no lucen bien en papel.
+ * Llena la franja de contexto (fecha/turno/supervisor/línea) que solo se ve al
+ * imprimir la vista normal (headerOperativo se oculta en impresión).
  */
 function renderResumenImpresion() {
   const contenedor = document.getElementById('printResumenContexto');
@@ -649,15 +309,11 @@ function renderResumenImpresion() {
   const s = sesion();
   const lineaId = valor('lineaVista') || 'TODAS';
   const nombreArea = lineaId === 'TODAS' ? 'Todas las líneas' : nombreLinea(lineaId);
-  
-  // Obtener producto y formato de la línea seleccionada
-  let producto = '';
-  let formato = '';
+  let producto = '', formato = '';
   if (lineaId !== 'TODAS' && s.productoPorLinea && s.productoPorLinea[lineaId]) {
     producto = s.productoPorLinea[lineaId].producto || 'No especificado';
     formato = s.productoPorLinea[lineaId].formato || 'No especificado';
   }
-
   contenedor.innerHTML = `
     <div style="display:flex; gap:8mm; flex-wrap:wrap; align-items:baseline;">
       <div><strong>Fecha:</strong> <span>${esc(fmtFecha(valor('fecha')))}</span></div>
@@ -668,34 +324,22 @@ function renderResumenImpresion() {
         <div><strong>Producto:</strong> <span>${esc(producto)}</span></div>
         <div><strong>Formato:</strong> <span>${esc(formato)}</span></div>
       ` : ''}
-    </div>
-  `;
+    </div>`;
 }
 
 function imprimirVista() {
-  // Asegurarnos de limpiar cualquier contenedor de reporte oculto
   const printReportContainer = document.getElementById('printReport');
   if (printReportContainer) {
     printReportContainer.style.display = 'none';
     printReportContainer.innerHTML = '';
   }
-  
-  // Remover clases de impresión masiva por si hubieran quedado colgadas
   document.body.classList.remove('print-report');
-
-  // Llenar la franja de contexto (fecha/turno/supervisor/línea) que
-  // solo aparece en esta impresión, ya que headerOperativo se oculta.
   renderResumenImpresion();
-
-  // Disparar la impresión nativa de la pantalla activa
   window.print();
 }
 
 // ==========================================================
 // EXPOSICIÓN A window
-// ----------------------------------------------------------
-// generarAsakai, imprimirVista: se llaman desde onclick="..."
-// en index.html (botones "Generar ASAKAI" e "Imprimir").
 // ==========================================================
 window.generarAsakai = generarAsakai;
 window.imprimirVista = imprimirVista;

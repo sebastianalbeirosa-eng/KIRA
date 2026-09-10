@@ -252,8 +252,15 @@ export function crearTomaCalidad(base = {}) {
   // filas sin datos, una fila recién agregada con el botón "+" (nombre vacío)
   // desaparecería al instante. El filtrado de vacíos se hace solo al mostrar
   // en Vista de Planta / sincronizar defectos, no en la normalización.
+  // Cada defecto de calidad lleva además 'accionProd': la acción con que
+  // producción responde a ese defecto (se carga desde el panel de producción).
   const defs = arr => Array.isArray(arr)
-    ? arr.map(d => ({ nombre: String(d?.nombre || '').trim(), pct: num(d?.pct), aclaracion: String(d?.aclaracion || '').trim() }))
+    ? arr.map(d => ({
+        nombre: String(d?.nombre || '').trim(),
+        pct: num(d?.pct),
+        aclaracion: String(d?.aclaracion || '').trim(),
+        accionProd: String(d?.accionProd || '').trim()
+      }))
     : [];
   const rots = arr => Array.isArray(arr)
     ? arr.map(d => ({ nombre: String(d?.nombre || '').trim(), pct: num(d?.pct), aclaracion: String(d?.aclaracion || '').trim() }))
@@ -336,28 +343,34 @@ export function asegurarObjetivosSesion(s) {
   lineasActivas().forEach(l => {
     if (!s.objetivos.porLinea[l.id]) {
       s.objetivos.porLinea[l.id] = {
-        calidad: 90, produccion: 0, vacioMax: 30,
-        rendimientoObj: 0, realCalidad: 0, realProd: 0,
-        // Tomas reales de m² quemados (POR TURNO): SOLO hora + valor. El
-        // formato/ciclo con que se evalúa cada toma se deduce de los eventos
-        // de producción del DÍA (db.produccionDia), no de acá.
+        // --- OBJETIVOS DE PRODUCCIÓN (cargables en el mini-form) ---
+        vacioMax: 30,     // objetivo: minutos máx. de vacío de horno
+        paradasMax: 60,   // objetivo: minutos máx. de paradas de máquina
+        // Tomas de m² quemados (POR TURNO): hora + valor. Solo para mostrar
+        // (hora a hora); ya no alimentan cálculos de rendimiento/proyección.
         lecturasQuemado: Array(3).fill(null).map(() => ({ hora: '', real: 0 })),
-        // Objetivo dinámico de m²/turno, calculado a partir de los eventos del día.
-        produccionProyectada: 0,
         // --- CALIDAD (planilla del auditor de calidad) ---
+        calidad: 90, realCalidad: 0,
         operarioCalidad: '',
         observacionesCalidad: '', // texto libre: observaciones generales del turno
-        tomasCalidad: Array(8).fill(null).map(() => crearTomaCalidad())
+        tomasCalidad: Array(8).fill(null).map(() => crearTomaCalidad()),
+        // Respuestas de producción a los defectos (flag de "enviado" para reflejar en Vista de Planta).
+        accionesProdEnviadas: false
       };
     } else {
       const o = s.objetivos.porLinea[l.id];
-      if (typeof o.rendimientoObj !== 'number') o.rendimientoObj = 0;
+      // Objetivos de producción.
+      if (typeof o.vacioMax !== 'number') o.vacioMax = 30;
+      if (typeof o.paradasMax !== 'number') o.paradasMax = 60;
+      if (typeof o.calidad !== 'number') o.calidad = 90;
+
       if (!Array.isArray(o.lecturasCalidad)) {
         o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
       }
       // Migración/normalización de la planilla de calidad por tomas.
       if (typeof o.operarioCalidad !== 'string') o.operarioCalidad = o.auditor || '';
       if (typeof o.observacionesCalidad !== 'string') o.observacionesCalidad = '';
+      if (typeof o.accionesProdEnviadas !== 'boolean') o.accionesProdEnviadas = false;
       if (!Array.isArray(o.tomasCalidad) || !o.tomasCalidad.length) {
         // Sembrar tomas desde las lecturas viejas (hora/global/parcial) si existían.
         const previas = (o.lecturasCalidad || []).filter(x => x && (x.hora || x.global != null || x.parcial != null));
@@ -377,94 +390,8 @@ export function asegurarObjetivosSesion(s) {
           real: Number(t?.real) || 0
         }));
       }
-
-      if (typeof o.produccionProyectada !== 'number') o.produccionProyectada = 0;
-      // NOTA: o.eventosProduccion (modelo viejo por turno) se conserva si
-      // existe en storage, para que eventosProduccionDia() pueda migrarlo.
     }
   });
-}
-
-/**
- * Devuelve el catálogo de formatos de horno guardado en la base (o null si
- * nunca se personalizó). Vive a nivel global de la app, no por sesión, porque
- * los formatos son un dato de planta común a todos los turnos.
- */
-export function formatosHornoGuardados() {
-  return Array.isArray(db.formatosHorno) ? db.formatosHorno : null;
-}
-
-/** Persiste el catálogo de formatos de horno en la base. */
-export function guardarFormatosHorno(lista) {
-  db.formatosHorno = Array.isArray(lista) ? lista : [];
-  persistir();
-}
-
-/* ==========================================================
-   PRODUCCIÓN CONTINUA DEL DÍA (eventos de producto/ciclo)
-   ----------------------------------------------------------
-   La producción del horno es un proceso continuo de 24 h: el producto y el
-   ciclo que corren no se reinician al cambiar de turno. Por eso los eventos
-   de producción (producto inicial + cambios de producto/ciclo) viven a NIVEL
-   DEL DÍA y por línea, compartidos por los 3 turnos de esa fecha:
-
-       db.produccionDia[fecha][lineaId] = [ {tipo, hora, producto, formatoId, ciclo}, ... ]
-
-   Así el operario solo carga cambios cuando realmente ocurren; el producto
-   vigente lo hereda del último evento del día, sin recargarlo cada turno.
-   ========================================================== */
-
-/**
- * Devuelve la lista de eventos de producción del día para una línea.
- * Si nunca se cargó nada, migra automáticamente desde los eventos que
- * hubiera guardados por turno en las sesiones de esa fecha (modelo viejo),
- * para no perder datos ya cargados.
- * @param {string} lineaId
- * @param {string} fecha  fecha administrativa del día (por defecto la seleccionada)
- */
-export function eventosProduccionDia(lineaId, fecha = valor('fecha')) {
-  if (!db.produccionDia) db.produccionDia = {};
-  if (!db.produccionDia[fecha]) db.produccionDia[fecha] = {};
-
-  if (!Array.isArray(db.produccionDia[fecha][lineaId])) {
-    // Migración: juntar los eventos que pudieran existir en las 3 sesiones
-    // (turnos) de esta fecha para esta línea, deduplicando por hora.
-    const migrados = [];
-    const vistos = new Set();
-    Object.entries(db.sesiones || {}).forEach(([key, s]) => {
-      if (!key.startsWith(fecha + '|')) return;
-      const evs = s.objetivos?.porLinea?.[lineaId]?.eventosProduccion;
-      if (!Array.isArray(evs)) return;
-      evs.forEach(ev => {
-        if (!ev || (!ev.producto && !ev.formatoId && !ev.ciclo)) return;
-        const clave = `${ev.hora}|${ev.producto}|${ev.formatoId}|${ev.ciclo}`;
-        if (vistos.has(clave)) return;
-        vistos.add(clave);
-        migrados.push({
-          tipo: ev.tipo || 'producto',
-          hora: ev.hora || '',
-          producto: ev.producto || '',
-          formatoId: ev.formatoId || '',
-          ciclo: Number(ev.ciclo) || 0
-        });
-      });
-    });
-    migrados.sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
-    // Si el primero no es 'inicial', marcarlo como tal (arranque del día).
-    if (migrados.length) migrados[0].tipo = 'inicial';
-    else migrados.push({ tipo: 'inicial', hora: '', producto: '', formatoId: '', ciclo: 0 });
-    db.produccionDia[fecha][lineaId] = migrados;
-  }
-
-  return db.produccionDia[fecha][lineaId];
-}
-
-/** Guarda la lista de eventos de producción del día para una línea. */
-export function guardarEventosProduccionDia(lineaId, eventos, fecha = valor('fecha')) {
-  if (!db.produccionDia) db.produccionDia = {};
-  if (!db.produccionDia[fecha]) db.produccionDia[fecha] = {};
-  db.produccionDia[fecha][lineaId] = Array.isArray(eventos) ? eventos : [];
-  persistir();
 }
 
 /** Garantiza que la sesión tenga la estructura de producto/formato por línea. */

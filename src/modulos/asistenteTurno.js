@@ -329,8 +329,8 @@ function quemadoDeLinea(lineaId) {
   const lecturas = (o.lecturasQuemado || []).filter(x => x.hora && x.real > 0);
   if (!lecturas.length) return null;
   const ultima = [...lecturas].sort((a, b) => a.hora.localeCompare(b.hora)).pop();
-  // Objetivo dinámico = producción proyectada del turno (calculada por eventos).
-  return { real: ultima.real, hora: ultima.hora, objetivoTurno: o.produccionProyectada || 0 };
+  // Solo el m² real de la última toma (ya no hay objetivo dinámico de producción).
+  return { real: ultima.real, hora: ultima.hora, objetivoTurno: 0 };
 }
 
 /**

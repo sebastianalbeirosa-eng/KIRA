@@ -155,9 +155,9 @@
             <p id="subtituloApp" class="text-2s text-slate-500">Gestión de paradas, vacío de horno y acciones correctivas</p>
           </div>
           <div class="header-actions flex gap-2">
-            <button class="btn px-4 py-2 text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50" onclick="imprimirVista()">Imprimir</button>
-            <button class="btn px-4 py-2 text-sm bg-rose-600 text-white hover:bg-rose-700" onclick="generarAsakai()">Reporte ASAKAI (PDF)</button>
-            <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700" onclick="guardarExcel()">Guardar turno / Excel</button>
+            <button class="btn px-4 py-2 text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 accion-editable" onclick="imprimirVista()">Imprimir</button>
+            <button class="btn px-4 py-2 text-sm bg-rose-600 text-white hover:bg-rose-700 accion-editable" onclick="generarAsakai()">Reporte ASAKAI (PDF)</button>
+            <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700 accion-editable" onclick="guardarExcel()">Guardar turno / Excel</button>
           </div>
         </div>
         <!-- Panel de control de sesión operativa. Los 5 selectores van SIEMPRE
@@ -219,6 +219,9 @@
           <!-- Tomas de calidad ENVIADAS del turno (solo rol calidad) -->
           <div id="vpCalidadTomas" class="mb-4" data-cap="cargarCalidad"></div>
 
+          <!-- Respuesta de producción a los defectos de calidad (solo rol producción) -->
+          <div id="vpProduccionAcciones" class="mb-4" data-cap="cargarProduccion"></div>
+
           <div class="grid grid-cols-1 gap-3">
 
   <!-- ========================= -->
@@ -264,19 +267,22 @@
           Mapa de calor de calidad — Defectos del turno
         </h2>
 
-        <table class="table w-auto text-xs text-slate-800 flex-1" style="display: table; height: 100%;">
+        <div class="max-h-[22rem] overflow-y-auto">
+        <table class="table w-auto text-xs text-slate-800">
           <thead>
             <tr>
               <th class="text-center w-12">#</th>
               <th class="text-center w-24">Línea</th>
+              <th class="text-center w-20">Hora</th>
               <th class="text-left w-44">Defecto</th>
               <th class="text-center w-24">%</th>
               <th class="text-left w-56">Acción correctiva</th>
               <th class="text-center w-32">Nivel crítico</th>
             </tr>
           </thead>
-          <tbody id="tablaMapaDefectos" style="height: 100%;"></tbody>
+          <tbody id="tablaMapaDefectos"></tbody>
         </table>
+        </div>
       </div>
 
       <div class="panel p-3">
@@ -299,21 +305,24 @@
           Orden crítico — Mapa de calor de máquinas
         </h2>
 
+        <div class="max-h-[22rem] overflow-y-auto">
         <table class="table w-full text-xs text-slate-800">
           <thead>
             <tr>
               <th class="text-center" style="width: 3%">#</th>
               <th class="text-center" style="width: 8%">Línea</th>
-              <th class="text-left" style="width: 15%">Máquina / Equipo</th>
-              <th class="text-center" style="width: 9%">Min. parada</th>
-              <th class="text-center" style="width: 9%">Min. vacío</th>
-              <th class="text-left" style="width: 23%; padding-left: 1.5rem">Motivo principal</th>
-              <th class="text-left" style="width: 24%">Observaciones</th>
+              <th class="text-center" style="width: 7%">Hora</th>
+              <th class="text-left" style="width: 14%">Máquina / Equipo</th>
+              <th class="text-center" style="width: 8%">Min. parada</th>
+              <th class="text-center" style="width: 8%">Min. vacío</th>
+              <th class="text-left" style="width: 21%; padding-left: 1.5rem">Motivo principal</th>
+              <th class="text-left" style="width: 22%">Observaciones</th>
               <th class="text-center" style="width: 9%">Nivel crítico</th>
             </tr>
           </thead>
           <tbody id="tablaMapaMaquinas"></tbody>
         </table>
+        </div>
       </div>
 
       <!-- Últimas paradas -->
@@ -347,22 +356,9 @@
            class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 mb-2 leading-relaxed">
       </div>
 
-      <label class="text-[10px] font-bold text-slate-400 uppercase">
-        Observación manual del supervisor
-      </label>
-
-      <textarea
-        id="vpNotaTurno"
-        rows="3"
-        class="field mt-1"
-        placeholder="Observaciones generales del turno..."
-        onchange="guardarNotaTurno(this.value)">
-      </textarea>
-
-      <div class="mt-2 text-[11px] text-slate-500">
-        Supervisor:
-        <b id="vpSupervisorNombre" class="text-slate-700"></b>
-      </div>
+      <!-- Observaciones cargadas desde la carga de datos de cada rol (solo lectura acá). -->
+      <div id="vpObsProduccion" class="mt-2 text-xs"></div>
+      <div id="vpObsCalidad" class="mt-2 text-xs"></div>
     </div>
 
   </div>
@@ -377,6 +373,13 @@
         
           <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-3" id="kpis" data-cap="cargarProduccion"></div>
 
+          <!-- ============================================================ -->
+          <!--  OBJETIVOS Y QUEMADO (inline, solo rol producción)          -->
+          <!--  Objetivo de vacío máx, objetivo de paradas máx y las tomas  -->
+          <!--  de m² quemados hora a hora. Guardado automático.            -->
+          <!-- ============================================================ -->
+          <div id="panelProduccionInline" class="panel p-3 mb-3" data-cap="cargarProduccion"></div>
+
           <div class="panel p-3 mb-3" data-cap="cargarProduccion">
             <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
               <div>
@@ -386,7 +389,7 @@
               <div class="flex gap-2 no-print">
                 <button class="btn bg-sky-600 text-white hover:bg-sky-700 text-xs py-1.5" onclick="abrirParada()" data-cap="cargarProduccion">Registrar parada</button>
                 <button class="btn bg-amber-600 text-white hover:bg-amber-700 text-xs py-1.5" onclick="abrirAccion()" data-cap="cargarProduccion">Acción correctiva</button>
-                <button class="btn bg-slate-600 text-white hover:bg-slate-700 text-xs py-1.5" onclick="abrirIndicadores()" data-cap="cargarProduccion">Indicadores y objetivos</button>
+
               </div>
             </div>
             <div id="maquinas"></div>
@@ -412,9 +415,15 @@
               </div>
             </div>
 
-            <!-- El viejo panel "Control de calidad — Defectos del turno" se
-                 eliminó: los defectos ahora se cargan en la planilla de calidad
-                 (#panelCalidadInline) por toma, y alimentan el TOP de defectos. -->
+            <!-- FOTOS DEL TURNO (producción): subir/arrastrar imágenes -->
+            <div class="panel p-3 flex flex-col" data-cap="cargarProduccion">
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-l font-black text-slate-700 uppercase">Fotos del turno</h3>
+                <span id="cantidadFotosProd" class="badge bg-slate-100 text-slate-700">0</span>
+              </div>
+              <p class="text-[12px] text-slate-500 mb-2">Adjuntá fotos de incidencias, máquinas o el estado del turno:</p>
+              <div id="fotosProduccionInline"></div>
+            </div>
           </div>
         </section>
 
@@ -1351,30 +1360,6 @@
       </div>
     </form>
   </div>
-
-<!-- Modal de indicadores y objetivos optimizado para responsive -->
-<div id="modalIndicadores" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
-  <div class="panel w-full max-w-[min(96vw,72rem)] max-h-[92vh] flex flex-col bg-white shadow-xl overflow-hidden">
-    
-    <!-- Cabecera fija -->
-    <div class="flex justify-between p-4 border-b border-slate-200">
-      <h2 class="font-black text-sky-700 text-base">Control de Objetivos y Cierre de Turno</h2>
-      <button type="button" onclick="cerrar('modalIndicadores')">✕</button>
-    </div>
-
-    <!-- Cuerpo con scroll interno para que los botones nunca queden ocultos -->
-    <div class="p-2 sm:p-4 overflow-y-auto flex-1">
-      <div id="objetivosLineasContainer" class="space-y-3"></div>
-    </div>
-
-    <!-- Pie fijo con botones accesibles -->
-    <div class="flex justify-end gap-2 p-4 border-t border-slate-200 bg-slate-50">
-      <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalIndicadores')">Cancelar</button>
-      <button type="button" class="btn bg-sky-700 text-white hover:bg-sky-800" onclick="guardarObjetivos()">Guardar y Evaluar Turno</button>
-    </div>
-
-  </div>
-</div>
 </div>
 
   <!-- Modal del constructor de planta -->

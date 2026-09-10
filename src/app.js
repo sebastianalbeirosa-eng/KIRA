@@ -14,7 +14,7 @@
   MIGRACIÓN COMPLETA — los 17 archivos de nucleo/ + modulos/ existen:
     nucleo/almacenamiento.js, estado.js, utilidades.js, alertasKira.js
     modulos/clasificacionEquipos.js, gestionParadas.js, accionesCorrectivas.js,
-    vistaDePlanta.js, notasTurno.js, gestionDefectos.js, indicadoresYObjetivos.js,
+    vistaDePlanta.js, notasTurno.js, gestionDefectos.js, cargaCalidad.js,
     constructorPlanta.js, graficosYAnalisis.js, historicos.js, exportarExcel.js,
     generarAsakai.js, gestionTurno.js
 
@@ -140,7 +140,6 @@ function actualizarTiempoBloqueo() {
 import './modulos/clasificacionEquipos.js';
 import './modulos/gestionParadas.js';
 import './modulos/accionesCorrectivas.js';
-import './modulos/indicadoresYObjetivos.js';
 import './modulos/exportarExcel.js';
 import './modulos/generarAsakai.js';
 import './modulos/asistenteChat.js';

@@ -69,6 +69,24 @@ function tomaDe(lineaId, i) {
   return Array.isArray(o.tomasCalidad) ? o.tomasCalidad[i] : null;
 }
 
+/**
+ * Devuelve la ÚLTIMA toma ENVIADA de una línea (la de hora más reciente), con
+ * su índice: {toma, indice} o null. Es la "toma del momento": cada nueva toma
+ * enviada reemplaza a la anterior en lo que se muestra a producción y en el
+ * mapa de calor. El histórico del turno solo vive en el gráfico de evolución.
+ */
+export function ultimaTomaEnviada(o) {
+  if (!o || !Array.isArray(o.tomasCalidad)) return null;
+  let mejor = null;
+  o.tomasCalidad.forEach((t, i) => {
+    if (t.enviada !== true) return;
+    if (!mejor || (t.hora || '').localeCompare(mejor.toma.hora || '') >= 0) {
+      mejor = { toma: t, indice: i };
+    }
+  });
+  return mejor;
+}
+
 const numAttr = v => (v != null && !isNaN(v)) ? v : '';
 
 /** Input de un campo simple de la toma, con guardado automático. */
@@ -302,8 +320,12 @@ export function renderPlanillaCalidadInline() {
 
     <!-- Observaciones generales del turno (por línea) -->
     <div class="mt-4 border-2 border-slate-200 rounded-lg p-3 bg-slate-50/60">
-      <div class="text-xs font-black text-slate-600 uppercase mb-2">Observaciones del turno (Calidad)</div>
-      <textarea rows="3" placeholder="Notas generales del turno: incidencias, tendencias, avisos para el próximo turno…"
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs font-black text-slate-600 uppercase">Observaciones del turno (Calidad)</div>
+        <button type="button" class="btn bg-slate-600 text-white hover:bg-slate-700 text-[11px] px-3 py-1"
+          onclick="enviarObsCalidad('${lineaId}')">Enviar nota</button>
+      </div>
+      <textarea id="obsCalidadTxt" rows="3" placeholder="Notas generales del turno: incidencias, tendencias, avisos para el próximo turno…"
         class="field w-full text-sm p-2" onchange="onCambioObservacionesCalidad(this)"
         data-cal-linea="${lineaId}">${esc(o.observacionesCalidad || '')}</textarea>
     </div>`;
@@ -373,32 +395,29 @@ function sincronizarDefectosDesdeTomas() {
   asegurarDefectosSesion(s);
 
   // Agrupar por línea + nombre: sumamos % y contamos para promediar.
-  const acum = {}; // clave `${lineaId}||${nombre}` -> {linea, nombre, suma, cant, hora}
+  // Solo la ÚLTIMA toma enviada de cada línea (la del momento). NO se acumulan
+  // ni promedian las tomas anteriores: cada toma nueva reemplaza a la previa.
+  const derivados = [];
   lineasActivas().forEach(l => {
     const o = s.objetivos?.porLinea?.[l.id];
-    if (!o || !Array.isArray(o.tomasCalidad)) return;
-    o.tomasCalidad.filter(t => t.enviada === true).forEach(t => {
-      (t.defectos || []).forEach(d => {
-        const nombre = (d.nombre || '').trim();
-        if (!nombre || d.pct == null) return;
-        const clave = `${l.id}||${nombre.toLowerCase()}`;
-        if (!acum[clave]) acum[clave] = { linea: l.id, nombre, suma: 0, cant: 0, hora: t.hora || '' };
-        acum[clave].suma += Number(d.pct);
-        acum[clave].cant += 1;
-        if (t.hora) acum[clave].hora = t.hora; // última hora vista
+    const ult = ultimaTomaEnviada(o);
+    if (!ult) return;
+    const t = ult.toma;
+    (t.defectos || []).forEach(d => {
+      const nombre = (d.nombre || '').trim();
+      if (!nombre || d.pct == null) return;
+      derivados.push({
+        id: `cal:${l.id}||${nombre.toLowerCase()}`,
+        linea: l.id,
+        hora: t.hora || '',
+        nombre,
+        porcentaje: Number(d.pct),
+        // Acción de producción para este defecto → columna "Acción" del mapa de calor.
+        accion: (d.accionProd || '').trim(),
+        obs: 'Derivado de la planilla de calidad'
       });
     });
   });
-
-  const derivados = Object.entries(acum).map(([clave, v]) => ({
-    id: `cal:${clave}`,
-    linea: v.linea,
-    hora: v.hora,
-    nombre: v.nombre,
-    porcentaje: +(v.suma / v.cant).toFixed(2),
-    accion: '',
-    obs: 'Derivado de la planilla de calidad'
-  }));
 
   // Conservar defectos NO derivados (cargados a mano, sin prefijo cal:) y
   // reemplazar solo los derivados.
@@ -461,6 +480,14 @@ export function onCambioObservacionesCalidad(el) {
   const o = objDe(lineaId);
   o.observacionesCalidad = el.value;
   persistir();
+}
+
+/** Envía la nota de calidad: guarda lo tipeado y refresca Vista de Planta. */
+export function enviarObsCalidad(lineaId) {
+  const el = document.getElementById('obsCalidadTxt');
+  if (el) { objDe(lineaId).observacionesCalidad = el.value; persistir(); }
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  mostrarAlertaKira('Nota de calidad enviada. Aparece en Vista de Planta.', 'Calidad', 'exito');
 }
 
 /** Campo de una fila de defectos/roturas (nombre/pct/aclaracion). */
@@ -785,6 +812,7 @@ export function ampliarFotoCalidad(src) {
 // ==========================================================
 window.onCambioCalidad = onCambioCalidad;
 window.onCambioObservacionesCalidad = onCambioObservacionesCalidad;
+window.enviarObsCalidad = enviarObsCalidad;
 window.onCambioLista = onCambioLista;
 window.onCambioAccion = onCambioAccion;
 window.agregarTomaCalidad = agregarTomaCalidad;
@@ -795,6 +823,9 @@ window.agregarAccionCalidad = agregarAccionCalidad;
 window.quitarAccionCalidad = quitarAccionCalidad;
 window.enviarTomaCalidad = enviarTomaCalidad;
 window.productoVigenteCalidad = productoVigenteCalidad;
+// Expuesta para que el panel de producción re-sincronice s.defectos (mapa de
+// calor de defectos) al cargar/enviar sus acciones sobre los defectos.
+window.sincronizarDefectosCalidad = sincronizarDefectosDesdeTomas;
 window.subirFotoCalidad = subirFotoCalidad;
 window.soltarFotoCalidad = soltarFotoCalidad;
 window.quitarFotoCalidad = quitarFotoCalidad;

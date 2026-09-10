@@ -18,17 +18,17 @@ import { valor, esc, hoyLocal } from '../nucleo/utilidades.js';
 import { db } from '../nucleo/almacenamiento.js';
 import {
   sesion, lineasActivas, lineaPorId, nombreLinea,
-  asegurarObjetivosSesion, asegurarProduccionSesion, TURNO_MIN,
-  eventosProduccionDia
+  asegurarObjetivosSesion, asegurarProduccionSesion, TURNO_MIN
 } from '../nucleo/estado.js';
 
 import { asegurarNotaTurno } from './notasTurno.js';
 import { asegurarDefectosSesion, renderDefectos } from './gestionDefectos.js';
 import { renderAnalisis } from './graficosYAnalisis.js';
 import { todasParadas, todasDefectos } from './historicos.js';
-import { minutosDesdeInicioTurno, objetivoAcumuladoHasta } from '../nucleo/horno.js';
+import { minutosDesdeInicioTurno } from '../nucleo/horno.js';
 import { areaDelRol } from '../nucleo/roles.js';
-import { renderPlanillaCalidadInline, renderTomasEnviadasVistaPlanta } from './cargaCalidad.js';
+import { renderPlanillaCalidadInline, renderTomasEnviadasVistaPlanta, ultimaTomaEnviada } from './cargaCalidad.js';
+import { renderProduccionInline, renderRespuestaDefectosVistaPlanta, renderFotosProduccion } from './cargaProduccion.js';
 
 /**
  * Filtra una lista de equipos al área del rol actual: calidad ve solo sus
@@ -39,22 +39,6 @@ function equiposDelArea(equipos) {
   const area = areaDelRol();
   if (!area) return equipos;
   return equipos.filter(e => (e.area || 'produccion') === area);
-}
-
-/**
- * Convierte la lista de eventos de producción de una línea en tramos aptos
- * para los cálculos de horno. Debe coincidir con la del form de indicadores.
- */
-function tramosDeEventosObjetivo(eventos) {
-  if (!Array.isArray(eventos)) return [];
-  return eventos
-    .filter(ev => ev.hora && ev.formatoId && Number(ev.ciclo) > 0)
-    .map(ev => ({
-      hora: ev.hora,
-      formatoId: ev.formatoId,
-      ciclo: Number(ev.ciclo),
-      producto: ev.producto || ''
-    }));
 }
 
 // Variable de estado del módulo: define si el Análisis muestra el turno
@@ -146,7 +130,7 @@ export function renderKpis() {
 
   const lineaFiltro = document.getElementById('lineaVista')?.value || 'TODAS';
 
-  let m, objCal, objProd, objVacio, realCal, parcialCal, horaParcial, realProd;
+  let m, objVacio, objParadas;
 
   // ------------------------------------------------------
   // DATOS DE UNA LÍNEA ESPECÍFICA
@@ -155,32 +139,17 @@ export function renderKpis() {
     const paradasLinea = s.paradas.filter(x => x.linea === lineaFiltro);
     m = metricas(paradasLinea);
     const o = s.objetivos.porLinea[lineaFiltro];
-    objCal = o.calidad;
-    objProd = o.produccion;
-    objVacio = o.vacioMax;
-    realCal = o.realCalidad || 0;
-    parcialCal = o.calidadParcial || 0;
-    horaParcial = o.horaCalidadParcial || '';
-    realProd = o.realProd || 0;
+    objVacio = o.vacioMax || 0;
+    objParadas = o.paradasMax || 0;
 
   // ------------------------------------------------------
   // DATOS DE TODAS LAS LÍNEAS
   // ------------------------------------------------------
   } else {
     m = metricas(s.paradas);
-    const activas = lineasActivas();
-    const objs = activas.map(l => s.objetivos.porLinea[l.id]);
-
-    objCal = objs.length ? objs.reduce((a, o) => a + o.calidad, 0) / objs.length : 0;
-    objProd = objs.reduce((a, o) => a + o.produccion, 0);
-    objVacio = objs.reduce((a, o) => a + o.vacioMax, 0);
-    realCal = objs.length ? objs.reduce((a, o) => a + (o.realCalidad || 0), 0) / objs.length : 0;
-    parcialCal = objs.length ? objs.reduce((a, o) => a + (o.calidadParcial || 0), 0) / objs.length : 0;
-
-    // Para "TODAS", mostramos la última hora registrada.
-    const horasParcial = objs.map(o => o.horaCalidadParcial).filter(Boolean).sort();
-    horaParcial = horasParcial.length ? horasParcial[horasParcial.length - 1] : '';
-    realProd = objs.reduce((a, o) => a + (o.realProd || 0), 0);
+    const objs = lineasActivas().map(l => s.objetivos.porLinea[l.id]);
+    objVacio = objs.reduce((a, o) => a + (o.vacioMax || 0), 0);
+    objParadas = objs.reduce((a, o) => a + (o.paradasMax || 0), 0);
   }
 
   // DISPONIBILIDAD
@@ -188,39 +157,24 @@ export function renderKpis() {
   const dispColor = dispVal >= 90 ? 'text-emerald-700' : 'text-rose-700';
   const dispTag = dispVal >= 90 ? '▲ ÓPTIMO' : '▼ BAJA';
 
-  // CALIDAD (desvío entre calidad parcial y calidad global)
-  const desvioCalidad = parcialCal - realCal;
-  let calColor, calTag;
-  if (desvioCalidad > 0) {
-    calColor = 'text-emerald-700';
-    calTag = `↑ +${desvioCalidad.toFixed(2)}%${horaParcial ? ` · ${horaParcial} hs` : ''}`;
-  } else if (desvioCalidad < 0) {
-    calColor = 'text-rose-700';
-    calTag = `↓ ${desvioCalidad.toFixed(2)}%${horaParcial ? ` · ${horaParcial} hs` : ''}`;
-  } else {
-    calColor = 'text-slate-700';
-    calTag = `→ 0.00%${horaParcial ? ` · ${horaParcial} hs` : ''}`;
-  }
+  // PARADAS vs objetivo.
+  const paradaOk = objParadas > 0 ? m.parada <= objParadas : m.parada <= 48;
+  const paradaColor = paradaOk ? 'text-emerald-700' : 'text-rose-700';
+  const paradaTag = objParadas > 0 ? `MÁX. ${objParadas}m` : 'PÉRDIDA';
 
-  // PRODUCTIVIDAD
-  const prodOk = realProd >= objProd;
-  const prodDiff = objProd - realProd;
-  const prodColor = prodOk ? 'text-emerald-700' : 'text-rose-700';
-  const prodTag = prodOk ? `▲ +${realProd - objProd}m²` : `▼ Faltan ${prodDiff}m²`;
-
-  // VACÍO
-  const vacioOk = m.vacio <= objVacio;
+  // VACÍO vs objetivo.
+  const vacioOk = objVacio > 0 ? m.vacio <= objVacio : m.vacio <= 30;
   const vacioColor = vacioOk ? 'text-sky-700' : 'text-rose-700';
 
-  // TARJETAS KPI
+  // TARJETAS KPI (dashboard de producción). Calidad/rendimiento ya no van acá:
+  // la calidad vive en su propio panel y las métricas de producción se
+  // muestran en Vista de Planta.
   const cards = [
     ['Tiempo productivo', `${m.productivos} min`, 'text-emerald-700', 'OPERACIÓN'],
-    ['Minutos de parada', `${m.parada} min`, m.parada > 48 ? 'text-rose-700' : 'text-amber-700', 'PÉRDIDA'],
+    ['Minutos de parada', `${m.parada} min`, paradaColor, paradaTag],
     ['Vacío de horno', `${m.vacio} min`, vacioColor, `MÁX. ${objVacio}m`],
     ['Eventos', m.eventos, 'text-sky-700', 'REGISTROS'],
     ['Disponibilidad', `${dispVal.toFixed(1)}%`, dispColor, dispTag],
-    ['Calidad', `${realCal.toFixed(2)}%`, calColor, calTag, parcialCal],
-    ['Productividad', `${realProd} m²`, prodColor, prodTag],
     ['Acciones', sesion().acciones.length, 'text-amber-700', 'CORRECTIVAS']
   ];
 
@@ -228,7 +182,6 @@ export function renderKpis() {
   if (!container) return;
 
   container.innerHTML = cards.map(c => {
-    const esCalidad = c[0] === 'Calidad';
     const tagColor = c[3].includes('↓') || c[3].includes('Faltan')
       ? 'text-rose-600'
       : c[3].includes('↑') ? 'text-emerald-600' : 'text-slate-400';
@@ -240,12 +193,6 @@ export function renderKpis() {
           <div class="text-[8px] font-black ${tagColor}">${c[3]}</div>
         </div>
         <div class="text-xl font-black ${c[2]}">${c[1]}</div>
-        ${esCalidad ? `
-          <div class="mt-1 text-[9px] font-bold text-slate-500">
-            Parcial Qualitron:
-            <span class="text-slate-700">${Number(c[4] || 0).toFixed(2)}%</span>
-          </div>
-        ` : ''}
       </div>
     `;
   }).join('');
@@ -296,14 +243,13 @@ export function renderMaquinas() {
 
     const total = s.paradas.filter(x => x.linea === l).reduce((a, x) => a + x.minutos, 0);
     const prod = s.productoPorLinea[l] || { producto: '', formato: '' };
-    // La descripción de la línea (ej. "Prensas 1 y 2 → ...") describe el proceso
-    // de producción; no se muestra al rol calidad, cuya única máquina es el Qualitron.
-    const desc = (areaDelRol() === 'calidad') ? '' : lineaConfig.descripcion;
+    // En el sinóptico se muestra solo el nombre de la línea. La descripción
+    // (ej. "Prensas 1 y 2") no se muestra: satura el encabezado y no aporta.
     return `
       <section class="scada-line mb-3">
         <div class="line-caption flex flex-wrap items-center justify-between">
           <div class="flex flex-wrap items-center gap-20">
-            <span>${esc(lineaConfig.nombre)}${desc ? ` · ${esc(desc)}` : ''}</span>
+            <span>${esc(lineaConfig.nombre)}</span>
             ${areaDelRol() === 'calidad' ? '' : `<div class="flex gap-2 no-print items-center">
               <label class="text-[9px] font-bold text-slate-500">Producto
                 <input type="text" class="field mt-1 text-[11px]" style="padding:2px 6px;height:24px;width:180px;" value="${esc(prod.producto)}" placeholder="Ej: ARUSHA ARENA" onchange="guardarProduccionLinea('${l}','producto',this.value)">
@@ -349,9 +295,12 @@ export function renderTodo() {
   renderMaquinas();
   renderAcciones();
   renderDefectos();
-  // Planilla de calidad embebida (solo se dibuja si el panel existe; oculto a
-  // producción por data-cap). Va acá para refrescarse al cambiar de línea.
-  if (areaDelRol() === 'calidad') renderPlanillaCalidadInline();
+  // Paneles embebidos por rol (se dibujan solo si su contenedor existe; el
+  // otro rol lo tiene oculto por data-cap). Van acá para refrescarse al
+  // cambiar de línea en "Área monitoreada".
+  const area = areaDelRol();
+  if (area === 'calidad') renderPlanillaCalidadInline();
+  if (area !== 'calidad') { renderProduccionInline(); renderFotosProduccion(); }
 }
 
 /** Clasifica un valor numérico en un nivel de criticidad (bajo/medio/alto/crítico) según umbrales dados. */
@@ -431,22 +380,23 @@ export function calcularKpisPlanta(l) {
   const fechaActual = valor('fecha');
   const sesionesDia = esModoDia ? sesionesDelDia(fechaActual) : [{ turno: s.turno, sesion: s }];
 
-  // Paradas y defectos: en modo día se concatenan los de los 3 turnos.
+  // Paradas y defectos: en modo día se concatenan los de los 3 turnos,
+  // etiquetando cada registro con su turno (para poder agruparlos luego).
   const paradasFuente = esModoDia
-    ? sesionesDia.flatMap(({ sesion: ses }) => ses.paradas || [])
-    : s.paradas;
+    ? sesionesDia.flatMap(({ turno: tn, sesion: ses }) => (ses.paradas || []).map(p => ({ ...p, _turno: tn })))
+    : (s.paradas || []).map(p => ({ ...p, _turno: s.turno }));
   const defectosFuente = esModoDia
     ? sesionesDia.flatMap(({ sesion: ses }) => ses.defectos || [])
     : s.defectos;
 
   const paradasScope = paradasFuente.filter(x => l === 'TODAS' || x.linea === l);
-  const defectosScopeRaw = defectosFuente.filter(x => l === 'TODAS' || x.linea === l);
-
-  // En modo día, un mismo defecto puede venir de varios turnos: se promedia
-  // su porcentaje por (nombre + línea) para no duplicar filas en el mapa.
+  // En modo día se listan TODOS los defectos del día con su hora (no se
+  // promedian), etiquetados por turno para poder separarlos. En modo turno,
+  // los defectos ya vienen de la última toma (sincronizarDefectosDesdeTomas).
   const defectosScope = esModoDia
-    ? promediarDefectosPorNombre(defectosScopeRaw)
-    : defectosScopeRaw;
+    ? sesionesDia.flatMap(({ turno: tn, sesion: ses }) =>
+        (ses.defectos || []).filter(x => l === 'TODAS' || x.linea === l).map(d => ({ ...d, _turno: tn })))
+    : (s.defectos || []).filter(x => l === 'TODAS' || x.linea === l).map(d => ({ ...d, _turno: s.turno }));
 
   // Métricas: en modo día el turno de referencia es 24 h (3 × TURNO_MIN).
   const minutosPeriodo = esModoDia ? TURNO_MIN * 3 : TURNO_MIN;
@@ -478,9 +428,13 @@ export function calcularKpisPlanta(l) {
       const porMotivo = {};
       regs.forEach(x => {
         const clave = x.motivo || '(sin motivo)';
-        if (!porMotivo[clave]) porMotivo[clave] = { mins: 0, vacio: 0, observaciones: [] };
+        if (!porMotivo[clave]) porMotivo[clave] = { mins: 0, vacio: 0, observaciones: [], hora: '', turno: x._turno || '' };
         porMotivo[clave].mins += x.minutos;
         porMotivo[clave].vacio += x.vacio;
+        // Hora del grupo: la más reciente de sus eventos.
+        const h = x.hora || '';
+        if (h && h.localeCompare(porMotivo[clave].hora) > 0) porMotivo[clave].hora = h;
+        if (x._turno) porMotivo[clave].turno = x._turno;
         if (x.obs && x.obs.trim()) {
           porMotivo[clave].observaciones.push(x.obs.trim());
         }
@@ -493,7 +447,9 @@ export function calcularKpisPlanta(l) {
           mins: datos.mins, 
           vacio: datos.vacio, 
           motivo,
-          observaciones: obsTexto
+          observaciones: obsTexto,
+          hora: datos.hora || '',
+          turno: datos.turno || ''
         });
       });
     });
@@ -525,57 +481,7 @@ export function calcularKpisPlanta(l) {
   const nivelDefecto = nivelPorValor(defectoPreponderante?.porcentaje || 0, UMBRAL_DEFECTO);
   const valorDefectoColor = nivelDefecto.key >= 2 ? 'text-rose-700' : (nivelDefecto.key === 1 ? 'text-amber-600' : 'text-emerald-700');
 
-  // --- RENDIMIENTO: m² quemados vs objetivo proporcional a la hora ---
   asegurarObjetivosSesion(s);
-  const inicioTurno = { Mañana: 5, Tarde: 13, Noche: 21 }[s.turno] ?? 5;
-
-  function minutosDesdeInicio(hora) {
-    if (!hora) return null;
-    const [h, min] = hora.split(':').map(Number);
-    let total = h * 60 + min;
-    if (s.turno === 'Noche' && total < 5 * 60) total += 1440;
-    let inicio = inicioTurno * 60;
-    if (s.turno === 'Noche') inicio = 21 * 60;
-    return Math.max(0, Math.min(TURNO_MIN, total - inicio));
-  }
-
-  // ---------- RENDIMIENTO (mismo cálculo que el form de Indicadores) ----------
-  // Rendimiento = m² reales acumulados hasta la última toma / objetivo teórico
-  // acumulado hasta esa misma hora, usando los eventos de producción (producto
-  // inicial + cambios de producto/ciclo) que definen la velocidad dinámica.
-  // En modo día se suman los m² reales y el objetivo acumulado de CADA turno
-  // (cada uno con su propio horario de inicio), y recién al final se divide.
-  // No se pueden promediar porcentajes de turnos distintos.
-  let objetivoTotal = 0, realTotal = 0;
-  const rendimientoTomas = [];
-
-  lineasIter.forEach(lc => {
-    const tramos = tramosDeEventosObjetivo(eventosProduccionDia(lc.id));
-    if (!tramos.length) return;
-
-    sesionesDia.forEach(({ turno: turnoSes, sesion: ses }) => {
-      const o = ses.objetivos?.porLinea?.[lc.id];
-      if (!o) return;
-
-      // Última toma con m² reales cargados en ESE turno.
-      const tomasValidas = (o.lecturasQuemado || [])
-        .filter(x => x.hora && x.real > 0)
-        .map(x => ({ ...x, minutos: minutosDesdeInicioTurno(x.hora, turnoSes) }))
-        .filter(x => x.minutos !== null && x.minutos > 0)
-        .sort((a, b) => a.minutos - b.minutos);
-
-      if (!tomasValidas.length) return;
-
-      const ultima = tomasValidas[tomasValidas.length - 1];
-      const objetivoAcum = objetivoAcumuladoHasta(tramos, turnoSes, ultima.minutos);
-      if (!(objetivoAcum > 0)) return;
-
-      rendimientoTomas.push({ linea: lc.id, lineaNombre: lc.nombre, turno: turnoSes, tomas: tomasValidas });
-
-      objetivoTotal += objetivoAcum;
-      realTotal += ultima.real;
-    });
-  });
 
   // ---------- CALIDAD ----------
   // Modo turno: objetivos de la sesión actual por línea.
@@ -613,49 +519,65 @@ export function calcularKpisPlanta(l) {
 
   const calidadDesvioClase = calidadDesvio >= 0 ? 'text-emerald-700' : 'text-rose-700';
   const calidadDesvioSigno = calidadDesvio > 0 ? '+' : '';
-  const rendimientoPct = objetivoTotal > 0 ? (realTotal / objetivoTotal) * 100 : null;
 
-  // --- METROS vs OBJETIVO: cuántos m² faltan o sobran respecto del objetivo
-  // teórico acumulado a la hora de la última toma. Positivo = sobran, negativo
-  // = faltan. Se muestra con flecha y color en la tarjeta KPI (igual que calidad).
-  const m2Objetivo = Math.round(objetivoTotal);
-  const m2Real = Math.round(realTotal);
-  const m2Desvio = m2Real - m2Objetivo;   // + sobran, - faltan
-  const hayRend = rendimientoPct !== null;
-  const rendDesvioClase = m2Desvio >= 0 ? 'text-emerald-700' : 'text-rose-700';
-  const rendDireccion = m2Desvio > 0
-    ? { color: 'text-emerald-600', stroke: '#059669', svg: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>' }
-    : m2Desvio < 0
-      ? { color: 'text-rose-600', stroke: '#dc2626', svg: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>' }
-      : { color: 'text-slate-400', stroke: '#94a3b8', svg: '<path d="M5 12h14"/>' };
+  // ---------- OBJETIVOS DE PRODUCCIÓN (paradas y vacío) ----------
+  // Suma de los objetivos por línea del scope actual. El objetivo de paradas
+  // (paradasMax) y el de vacío (vacioMax) se cargan en el mini-form de
+  // producción. Sirven para colorear las tarjetas contra el objetivo real.
+  const objParadas = lineasIter.reduce((a, lc) => a + (Number(s.objetivos.porLinea[lc.id]?.paradasMax) || 0), 0);
+  const objVacio = lineasIter.reduce((a, lc) => a + (Number(s.objetivos.porLinea[lc.id]?.vacioMax) || 0), 0);
 
-  // EVALUACIÓN DE SEMÁFORO (VALORES) PARA CADA TARJETA KPI
-  const paradaValorColor = m.parada <= 20 ? 'text-emerald-700' : (m.parada <= 60 ? 'text-amber-600' : 'text-rose-700');
-  const vacioValorColor = m.vacio <= 10 ? 'text-emerald-700' : (m.vacio <= 30 ? 'text-amber-600' : 'text-rose-700');
-  const eficienciaValorColor = m.disponibilidad >= 85 ? 'text-emerald-700' : (m.disponibilidad >= 80 ? 'text-amber-600' : 'text-rose-700');
-  const dispEqValorColor = disponibilidadEquipos >= 85 ? 'text-emerald-700' : (disponibilidadEquipos >= 80 ? 'text-amber-600' : 'text-rose-700');
-  const rendimientoValorColor = rendimientoPct === null ? 'text-slate-400' : (rendimientoPct >= 85 ? 'text-emerald-700' : (rendimientoPct >= 80 ? 'text-amber-600' : 'text-rose-700'));
+  // EVALUACIÓN DE SEMÁFORO (VALORES) PARA CADA TARJETA KPI.
+  // Parada y vacío se comparan contra su objetivo si está cargado (>0); si no,
+  // se usan umbrales fijos por defecto.
+  const paradaValorColor = objParadas > 0
+    ? (m.parada <= objParadas ? 'text-emerald-700' : (m.parada <= objParadas * 1.5 ? 'text-amber-600' : 'text-rose-700'))
+    : (m.parada <= 20 ? 'text-emerald-700' : (m.parada <= 60 ? 'text-amber-600' : 'text-rose-700'));
+  const vacioValorColor = objVacio > 0
+    ? (m.vacio <= objVacio ? 'text-emerald-700' : (m.vacio <= objVacio * 1.5 ? 'text-amber-600' : 'text-rose-700'))
+    : (m.vacio <= 10 ? 'text-emerald-700' : (m.vacio <= 30 ? 'text-amber-600' : 'text-rose-700'));
 
-  // CÁLCULO DE EGE (Eficiencia Global de los Equipos)
-  // Fórmula industrial: Disponibilidad x Rendimiento x Calidad
-  const dispFactor = Math.max(0, Math.min(100, m.disponibilidad)) / 100;
-  const rendFactor = rendimientoPct !== null ? Math.max(0, Math.min(100, rendimientoPct)) / 100 : 1; // Si no hay rendimiento configurado, se toma como 1 (100%) por defecto para no falsear el cálculo
-  const calFactor = Math.max(0, Math.min(100, calidadReal)) / 100;
-  const egeTurno = dispFactor * rendFactor * calFactor * 100;
-  const egeValorColor = egeTurno >= 85 ? 'text-emerald-700' : (egeTurno >= 75 ? 'text-amber-600' : 'text-rose-700');
+  // ---------- MÉTRICAS PARA LAS TARJETAS QUEMADOS / CLASIFICADOS / TONO ----------
+  // Se muestran los valores CARGADOS (última toma), con su hora, sin cálculos.
+  //   - QUEMADOS  : última toma de m² quemados que carga producción (lecturasQuemado).
+  //   - CLASIFIC. : última toma de m² de calidad + Rotura % de la última toma.
+  //   - TONO      : tono de la última toma de calidad.
+  // Se toman de la primera línea del scope con dato (cada línea es independiente;
+  // en la práctica el selector fija una sola línea).
+  let quemadoVal = null, quemadoHora = '';
+  let clasifVal = null, clasifHora = '', roturaVal = null, segundaVal = null, tonoVal = null, tonoHora = '';
+  for (const lc of lineasIter) {
+    const o = s.objetivos?.porLinea?.[lc.id];
+    if (!o) continue;
+    // Quemado: última lectura con valor > 0 (por hora).
+    const quemadas = (o.lecturasQuemado || []).filter(t => t && t.hora && Number(t.real) > 0)
+      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+    if (quemadoVal === null && quemadas.length) {
+      const u = quemadas[quemadas.length - 1];
+      quemadoVal = Number(u.real); quemadoHora = u.hora;
+    }
+    // Calidad: última toma enviada (m², rotura, 2da, tono).
+    const ult = ultimaTomaEnviada(o);
+    if (clasifVal === null && ult) {
+      const t = ult.toma;
+      if (t.m2 != null) { clasifVal = Number(t.m2); clasifHora = t.hora || ''; }
+      if (t.rotura != null) roturaVal = Number(t.rotura);
+      if (t.segunda != null) segundaVal = Number(t.segunda);
+      if (t.tono != null) { tonoVal = Number(t.tono); tonoHora = t.hora || ''; }
+    }
+  }
 
   return {
     s, paradasScope, defectosScope, m, lineasIter, filasMaquinas, filasMapaCalor,
     defectosOrdenados, defectoPreponderante, pctParada, pctVacio,
     maquinaCritica, nivelCritica, valorCriticaColor,
-    disponibilidadEquipos, dispEqValorColor, equiposConProblema, totalEquiposScope,
+    disponibilidadEquipos, equiposConProblema, totalEquiposScope,
     nivelDefecto, valorDefectoColor,
     calidadReal, calidadParcial, calidadObjetivo, calidadDesvio, horaCalidad,
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
-    rendimientoPct, rendimientoValorColor,
-    m2Objetivo, m2Real, m2Desvio, hayRend, rendDesvioClase, rendDireccion,
-    paradaValorColor, vacioValorColor, eficienciaValorColor,
-    egeTurno, egeValorColor,
+    objParadas, objVacio,
+    paradaValorColor, vacioValorColor,
+    quemadoVal, quemadoHora, clasifVal, clasifHora, roturaVal, segundaVal, tonoVal, tonoHora,
     esModoDia, minutosPeriodo, sesionesDia
   };
 }
@@ -670,10 +592,9 @@ export function renderVistaPlanta() {
     nivelDefecto, valorDefectoColor,
     calidadReal, calidadParcial, calidadDesvio, horaCalidad,
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
-    rendimientoPct, rendimientoValorColor,
-    m2Objetivo, m2Real, m2Desvio, hayRend, rendDesvioClase, rendDireccion,
-    paradaValorColor, vacioValorColor, eficienciaValorColor,
-    egeTurno, egeValorColor,
+    objParadas, objVacio,
+    paradaValorColor, vacioValorColor,
+    quemadoVal, quemadoHora, clasifVal, clasifHora, roturaVal, segundaVal, tonoVal, tonoHora,
     esModoDia, sesionesDia
   } = calcularKpisPlanta(l);
 
@@ -736,30 +657,26 @@ export function renderVistaPlanta() {
       <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     </div>
 
+    <!-- QUEMADOS: m² quemados (última toma cargada por producción) + hora. -->
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
       <div>
-        <div class="text-[13px] uppercase font-black text-slate-500">Disponibilidad</div>
-        <div class="text-2xl font-black ${eficienciaValorColor} mt-2">${m.disponibilidad.toFixed(1)}%</div>
-        <div class="text-[11px] text-slate-400 mt-2">Estado de equipos: ${equiposConProblema} con problemas</div>
+        <div class="text-[13px] uppercase font-black text-slate-500">Quemados</div>
+        <div class="text-2xl font-black text-slate-800 mt-1">${quemadoVal != null ? quemadoVal.toLocaleString('es-AR') + ' <span class="text-sm font-bold text-slate-400">m²</span>' : '<span class="text-slate-300">—</span>'}</div>
+        ${quemadoVal != null && quemadoHora ? `<div class="text-[11px] text-slate-400 mt-1">${esc(quemadoHora)} hs</div>` : ''}
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><rect x="3" y="8" width="4" height="8" rx="1"/><rect x="10" y="5" width="4" height="11" rx="1"/><rect x="17" y="10" width="4" height="6" rx="1"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M8 2c1 3-2 4-2 7a4 4 0 0 0 8 0c0-1-.5-2-1-3 1 1 3 3 3 6a6 6 0 0 1-12 0c0-4 4-5 4-10z"/></svg>
     </div>
 
+    <!-- METROS CLASIFICADOS: m² de la última toma de calidad + Rotura % secundario. -->
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
       <div>
-        <div class="text-[13px] uppercase font-black text-slate-500">Rendimiento</div>
-        <div class="text-2xl font-black ${rendimientoValorColor} mt-1">${rendimientoPct === null ? 'N/D' : rendimientoPct.toFixed(1) + '%'}</div>
-        ${hayRend ? `
-        <div class="text-[12px] text-slate-500 mt-1 leading-snug">Objetivo: <b class="text-slate-700">${m2Objetivo.toLocaleString('es-AR')} m²</b></div>
-        <div class="text-[12px] text-slate-500 leading-snug">Real: <b class="text-slate-700">${m2Real.toLocaleString('es-AR')} m²</b></div>
-        <div class="text-[12px] ${rendDesvioClase} font-bold flex items-center gap-1 leading-snug">
-          ${m2Desvio > 0 ? 'Sobra:' : m2Desvio < 0 ? 'Falta:' : 'Dif.:'}
-          <svg viewBox="0 0 24 24" fill="none" stroke="${rendDireccion.stroke}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">${rendDireccion.svg}</svg>
-          ${Math.abs(m2Desvio).toLocaleString('es-AR')} m²
-        </div>` : `
-        <div class="text-[11px] text-slate-400 mt-1 leading-tight">Cargá tomas de m² en Indicadores</div>`}
+        <div class="text-[13px] uppercase font-black text-slate-500">Metros clasificados</div>
+        <div class="text-2xl font-black text-slate-800 mt-1">${clasifVal != null ? clasifVal.toLocaleString('es-AR') + ' <span class="text-sm font-bold text-slate-400">m²</span>' : '<span class="text-slate-300">—</span>'}</div>
+        ${segundaVal != null ? `<div class="text-[12px] mt-1 text-amber-700 font-bold">2da: ${segundaVal}%</div>` : ''}
+        ${roturaVal != null ? `<div class="text-[12px] text-orange-700 font-bold">Rotura: ${roturaVal}%</div>` : ''}
+        ${clasifVal != null && clasifHora ? `<div class="text-[11px] text-slate-400 mt-0.5">${esc(clasifHora)} hs</div>` : ''}
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     </div>
 
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
@@ -772,18 +689,25 @@ export function renderVistaPlanta() {
       <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M20 6 9 17l-5-5"/></svg>
     </div>
 
+    <!-- TONO: valor de tono de la última toma de calidad + hora. -->
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
       <div>
-        <div class="text-[13px] uppercase font-black text-slate-500">Eficiencia (EGE)</div>
-        <div class="text-2xl font-black ${egeValorColor} mt-1">${egeTurno.toFixed(1)}%</div>
-        <div class="text-[11px] text-slate-400 mt-1">Disp. × Rend. × Cal.</div>
+        <div class="text-[13px] uppercase font-black text-slate-500">Tono</div>
+        <div class="text-2xl font-black text-slate-800 mt-1">${tonoVal != null ? tonoVal : '<span class="text-slate-300">—</span>'}</div>
+        ${tonoVal != null && tonoHora ? `<div class="text-[11px] text-slate-400 mt-1">${esc(tonoHora)} hs</div>` : ''}
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M4 15a8 8 0 1 1 16 0"/><line x1="12" y1="15" x2="15.5" y2="10.5"/><circle cx="12" cy="15" r="1" fill="#059669" stroke="none"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 2a10 10 0 0 0 0 20 2.5 2.5 0 0 0 2-4 2.5 2.5 0 0 1 2-4h1a5 5 0 0 0 5-5 10 10 0 0 0-10-7z"/></svg>
     </div>
   `;
 
-  // Resto de la renderización del mapa de calor, tablas y resúmenes...
-  document.getElementById('tablaMapaMaquinas').innerHTML = filasMapaCalor.length ? filasMapaCalor.map((f, i) => {
+  // Fila separadora de turno (solo en modo día). colspan según la tabla.
+  const filaTurno = (turno, cols) => `<tr class="bg-slate-100"><td colspan="${cols}" class="text-[10px] font-black text-slate-500 uppercase py-1 px-2">Turno ${esc(turno || '—')}</td></tr>`;
+
+  // ---------- MAPA DE CALOR DE MÁQUINAS (paradas) ----------
+  // Modo turno: ordenadas por minutos (más crítica arriba). Modo día:
+  // agrupadas por turno (Mañana/Tarde/Noche), con separador de turno.
+  const ordenTurno = { 'Mañana': 0, 'Tarde': 1, 'Noche': 2 };
+  const filaMaquina = (f, i) => {
     const nivelP = nivelPorValor(f.mins, UMBRAL_PARADA);
     const nivelV = nivelPorValor(f.vacio, UMBRAL_VACIO);
     const nivelFinal = nivelP.key >= nivelV.key ? nivelP : nivelV;
@@ -791,6 +715,7 @@ export function renderVistaPlanta() {
       <tr class="${nivelFinal.rowBg}">
         <td class="text-center font-black text-slate-500">${i + 1}</td>
         <td class="text-center text-slate-600">${esc(f.lineaNombre || '—')}</td>
+        <td class="text-center text-sky-700 font-bold">${esc(f.hora || '—')}</td>
         <td><b>${esc(f.equipo)}</b></td>
         <td class="text-center"><span class="badge ${nivelP.badge}">${f.mins} min</span></td>
         <td class="text-center"><span class="badge ${nivelV.badge}">${f.vacio} min</span></td>
@@ -798,20 +723,51 @@ export function renderVistaPlanta() {
         <td class="text-slate-600 text-xs">${esc(f.observaciones || '—')}</td>
         <td class="text-center"><span class="badge ${nivelFinal.badge}">${nivelFinal.label}</span></td>
       </tr>`;
-  }).join('') : '<tr><td colspan="8" class="text-center text-slate-500 p-3 italic">No hay paradas registradas en este turno.</td></tr>';
+  };
+  let htmlMaq;
+  if (!filasMapaCalor.length) {
+    htmlMaq = '<tr><td colspan="9" class="text-center text-slate-500 p-3 italic">No hay paradas registradas en este turno.</td></tr>';
+  } else if (esModoDia) {
+    // Agrupar por turno; dentro de cada turno, por minutos desc.
+    const porTurno = {};
+    filasMapaCalor.forEach(f => { (porTurno[f.turno] ||= []).push(f); });
+    htmlMaq = Object.keys(porTurno)
+      .sort((a, b) => (ordenTurno[a] ?? 9) - (ordenTurno[b] ?? 9))
+      .map(tn => filaTurno(tn, 9) + porTurno[tn].sort((a, b) => b.mins - a.mins).map((f, i) => filaMaquina(f, i)).join(''))
+      .join('');
+  } else {
+    htmlMaq = filasMapaCalor.map((f, i) => filaMaquina(f, i)).join('');
+  }
+  document.getElementById('tablaMapaMaquinas').innerHTML = htmlMaq;
 
-  document.getElementById('tablaMapaDefectos').innerHTML = defectosOrdenados.length ? defectosOrdenados.map((x, i) => {
+  // ---------- MAPA DE CALOR DE DEFECTOS ----------
+  const filaDefecto = (x, i) => {
     const nivel = nivelPorValor(x.porcentaje, UMBRAL_DEFECTO);
     return `
       <tr class="${nivel.rowBg}">
         <td class="text-center font-black text-slate-500">${i + 1}</td>
         <td class="text-center text-slate-600">${esc(nombreLinea(x.linea))}</td>
+        <td class="text-center text-sky-700 font-bold">${esc(x.hora || '—')}</td>
         <td><b>${esc(x.nombre)}</b></td>
         <td class="text-center"><span class="badge ${nivel.badge}">${x.porcentaje}%</span></td>
         <td>${esc(x.accion || '—')}</td>
         <td class="text-center"><span class="badge ${nivel.badge}">${nivel.label}</span></td>
       </tr>`;
-  }).join('') : '<tr><td colspan="6" class="text-center text-slate-500 p-3 italic">No hay defectos de calidad registrados en este turno.</td></tr>';
+  };
+  let htmlDef;
+  if (!defectosOrdenados.length) {
+    htmlDef = '<tr><td colspan="7" class="text-center text-slate-500 p-3 italic">No hay defectos de calidad registrados en este turno.</td></tr>';
+  } else if (esModoDia) {
+    const porTurno = {};
+    defectosOrdenados.forEach(x => { (porTurno[x._turno] ||= []).push(x); });
+    htmlDef = Object.keys(porTurno)
+      .sort((a, b) => (ordenTurno[a] ?? 9) - (ordenTurno[b] ?? 9))
+      .map(tn => filaTurno(tn, 7) + porTurno[tn].sort((a, b) => b.porcentaje - a.porcentaje).map((x, i) => filaDefecto(x, i)).join(''))
+      .join('');
+  } else {
+    htmlDef = defectosOrdenados.map((x, i) => filaDefecto(x, i)).join('');
+  }
+  document.getElementById('tablaMapaDefectos').innerHTML = htmlDef;
 
   // Top motivos de parada - COMENTADO: tarjeta eliminada del HTML
   // const causasScope = {};
@@ -853,21 +809,37 @@ export function renderVistaPlanta() {
   } else {
     frasesAuto.push('Sin paradas relevantes registradas en este turno.');
   }
-  if (m.vacio > objVacioTotal) {
-    frasesAuto.push(`Generación de vacío en horno por encima del objetivo (${m.vacio} min vs. ${objVacioTotal} min objetivo).`);
+  // Paradas vs objetivo.
+  if (objParadas > 0) {
+    frasesAuto.push(m.parada <= objParadas
+      ? `Tiempo de paradas dentro del objetivo (${m.parada} min de ${objParadas} min máx.).`
+      : `Tiempo de paradas por encima del objetivo (${m.parada} min vs. ${objParadas} min máx.).`);
   }
+  // Vacío vs objetivo.
+  if (m.vacio > objVacioTotal && objVacioTotal > 0) {
+    frasesAuto.push(`Vacío de horno por encima del objetivo (${m.vacio} min vs. ${objVacioTotal} min).`);
+  }
+  // Defecto más relevante (última toma).
   if (defectoPrincipal) {
     frasesAuto.push(`Defecto de calidad más relevante: <b>${esc(defectoPrincipal.nombre)}</b> (${defectoPrincipal.porcentaje}%).`);
   }
-  if (m.disponibilidad < 85) {
-    frasesAuto.push('Se recomienda seguimiento y generar plan de acción.');
-  } else {
-    frasesAuto.push('Disponibilidad dentro de objetivo, sin acciones urgentes pendientes.');
-  }
+  // Producción del turno (lo cargado).
+  if (quemadoVal != null) frasesAuto.push(`m² quemados: <b>${quemadoVal.toLocaleString('es-AR')}</b>${quemadoHora ? ` (${esc(quemadoHora)} hs)` : ''}.`);
+  if (clasifVal != null) frasesAuto.push(`m² clasificados: <b>${clasifVal.toLocaleString('es-AR')}</b>${roturaVal != null ? ` · rotura ${roturaVal}%` : ''}.`);
   document.getElementById('vpComentarioAuto').innerHTML = frasesAuto.join(' ');
 
-  document.getElementById('vpNotaTurno').value = s.notaTurno || '';
-  document.getElementById('vpSupervisorNombre').textContent = s.supervisor || 'No asignado';
+  // Reflejo de las observaciones cargadas por cada rol (solo lectura).
+  const obsProd = (s.notaTurno || '').trim();
+  const elObsProd = document.getElementById('vpObsProduccion');
+  if (elObsProd) elObsProd.innerHTML = obsProd
+    ? `<div class="font-black text-slate-500 uppercase text-[10px] mb-0.5">Observaciones de producción</div><p class="text-slate-700 whitespace-pre-line">${esc(obsProd)}</p>`
+    : '';
+  // Observaciones de calidad: por línea (la monitoreada / primera del scope).
+  const obsCal = (lineasIter.map(lc => (s.objetivos?.porLinea?.[lc.id]?.observacionesCalidad || '').trim()).find(Boolean) || '');
+  const elObsCal = document.getElementById('vpObsCalidad');
+  if (elObsCal) elObsCal.innerHTML = obsCal
+    ? `<div class="font-black text-sky-600 uppercase text-[10px] mb-0.5">Observaciones de calidad</div><p class="text-slate-700 whitespace-pre-line">${esc(obsCal)}</p>`
+    : '';
 
   // Renderizar gráficos de calidad (modo turno u día de 24 h)
   renderizarGraficosCalidad(l, lineasIter, s, { esModoDia, sesionesDia });
@@ -875,9 +847,10 @@ export function renderVistaPlanta() {
   // Renderizar gráfico de evolución de defectos
   renderizarGraficoEvolucionDefectos(l, defectosScope, s);
 
-  // Reflejar las tomas de calidad enviadas (solo rol calidad; el contenedor
-  // está oculto para el resto por data-cap).
+  // Reflejar en Vista de Planta lo propio de cada rol (contenedores ocultos
+  // para el otro rol por data-cap).
   if (areaDelRol() === 'calidad') renderTomasEnviadasVistaPlanta();
+  else renderRespuestaDefectosVistaPlanta();
 }
 
 /**
@@ -1777,3 +1750,4 @@ window.cambiarPeriodoVista = cambiarPeriodoVista;
 // Expuesto para que cargaCalidad.js refresque el dashboard tras enviar una
 // toma (sin crear dependencia circular de import).
 window.renderTodo = renderTodo;
+window.renderVistaPlanta = renderVistaPlanta;

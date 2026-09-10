@@ -13,7 +13,7 @@
 
 import { persistir } from '../nucleo/almacenamiento.js';
 import { valor } from '../nucleo/utilidades.js';
-import { sesion, lineasActivas } from '../nucleo/estado.js';
+import { sesion, lineasActivas, crearTomaCalidad } from '../nucleo/estado.js';
 import { mostrarConfirmacionKira, mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import { renderTodo } from './vistaDePlanta.js';
 
@@ -58,10 +58,13 @@ function limpiarSesionActual() {
   Object.values(objs).forEach(o => {
     o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
     o.lecturasQuemado = Array(3).fill(null).map(() => ({ hora: '', real: 0 }));
+    o.tomasCalidad = Array(8).fill(null).map(() => crearTomaCalidad());
     o.realCalidad = 0;
     o.calidadParcial = 0;
     o.horaCalidadParcial = '';
-    o.realProd = 0;
+    o.observacionesCalidad = '';
+    o.quiebresProducto = [];
+    o.lecturasDefectos = [];
   });
   s.actualizada = new Date().toISOString();
   persistir();

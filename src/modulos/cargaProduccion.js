@@ -66,16 +66,16 @@ function htmlObjetivosQuemado(lineaId, o) {
     : [{ hora: '', real: 0 }, { hora: '', real: 0 }, { hora: '', real: 0 }];
   return `
     <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-3">
-      <!-- Objetivos: compactos, label a la izquierda + input angosto a la derecha -->
+      <!-- Objetivos: compactos, label a la izquierda + input al lado con separación ajustada -->
       <div class="space-y-2">
         <div class="text-[10px] font-black text-slate-500 uppercase">Objetivos del turno</div>
-        <label class="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
-          <span>Vacío horno (min)</span>
-          <input type="number" step="1" min="0" value="${o.vacioMax != null ? o.vacioMax : ''}" class="field text-sm p-1 w-20 text-center"
+        <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+          <span class="w-28 shrink-0">Vacío horno (min)</span>
+          <input id="prodObjVacioMax" type="number" step="1" min="0" value="${o.vacioMax != null ? o.vacioMax : ''}" class="field text-sm p-1 w-20 text-center"
             onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="vacioMax"></label>
-        <label class="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
-          <span>Paradas (min)</span>
-          <input type="number" step="1" min="0" value="${o.paradasMax != null ? o.paradasMax : ''}" class="field text-sm p-1 w-20 text-center"
+        <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+          <span class="w-28 shrink-0">Paradas (min)</span>
+          <input id="prodObjParadasMax" type="number" step="1" min="0" value="${o.paradasMax != null ? o.paradasMax : ''}" class="field text-sm p-1 w-20 text-center"
             onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="paradasMax"></label>
       </div>
 

@@ -97,6 +97,29 @@ function modelosGeminiAProbar() {
 }
 
 async function consultarGemini(apiKey, prompt) {
+  // Intentar primero con el endpoint proxy del servidor
+  try {
+    const proxyResp = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        systemInstruction: SISTEMA,
+        apiKey: apiKey && apiKey !== 'server' ? apiKey : undefined
+      })
+    });
+    if (proxyResp.ok) {
+      const data = await proxyResp.json();
+      if (data?.text) return data.text.trim();
+    }
+  } catch {
+    // Si falla el endpoint proxy, continuar con llamada directa si hay clave
+  }
+
+  if (!apiKey || apiKey === 'server') {
+    throw new Error('No se pudo conectar con el servicio de IA. Verificá la configuración.');
+  }
+
   const body = {
     system_instruction: { parts: [{ text: SISTEMA }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],

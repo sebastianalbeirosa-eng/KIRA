@@ -621,9 +621,27 @@ export function enviarConsultaAsistente(event) {
 const API_KEY_STORAGE = 'kira_ia_api_key';
 const PROVEEDOR_STORAGE = 'kira_ia_proveedor';
 
+let servidorTieneIA = false;
+fetch('/api/gemini/status')
+  .then(r => r.json())
+  .then(d => {
+    if (d && d.configured) {
+      servidorTieneIA = true;
+      refrescarEstadoApiKey();
+    }
+  })
+  .catch(() => {});
+
 /** Devuelve la API key guardada (o '' si no hay). Uso interno. */
 function obtenerApiKey() {
-  try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch { return ''; }
+  try {
+    const k = localStorage.getItem(API_KEY_STORAGE) || '';
+    if (k) return k;
+    if (servidorTieneIA) return 'server';
+    return '';
+  } catch {
+    return servidorTieneIA ? 'server' : '';
+  }
 }
 
 /** Devuelve el proveedor de IA elegido (gemini por defecto). */
@@ -648,6 +666,7 @@ export function cambiarModeloIA(valor) {
 /** Enmascara la clave para mostrarla sin revelarla: sk-••••••••1234. */
 function enmascararApiKey(key) {
   if (!key) return '';
+  if (key === 'server') return 'Servidor integrado';
   const visible = key.slice(-4);
   const prefijo = key.slice(0, 3);
   return `${prefijo}${'•'.repeat(Math.max(6, key.length - 7))}${visible}`;
@@ -658,7 +677,10 @@ function refrescarEstadoApiKey() {
   const el = document.getElementById('asistenteApiEstado');
   if (!el) return;
   const key = obtenerApiKey();
-  if (key) {
+  if (key === 'server') {
+    el.textContent = '✓ Servidor configurado con Gemini';
+    el.className = 'text-[11px] font-bold mb-2 text-emerald-700';
+  } else if (key) {
     el.textContent = `✓ Clave guardada: ${enmascararApiKey(key)}`;
     el.className = 'text-[11px] font-bold mb-2 text-emerald-700';
   } else {

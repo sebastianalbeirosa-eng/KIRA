@@ -1,0 +1,8 @@
+{
+  "name": "KIRA",
+  "description": "Industrial Software Platform - Control operativo de producción, paradas, vacío de horno y calidad",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

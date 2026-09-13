@@ -2,12 +2,26 @@
 // SISTEMA DE BLOQUEO DE SESIÓN
 // ============================================
 
-// Usuarios de ejemplo (mismo que en login.js)
-const USUARIOS = {
-  'admin': { password: 'admin123', nombre: 'Administrador', rol: 'admin' },
-  'supervisor': { password: 'super123', nombre: 'Supervisor', rol: 'supervisor' },
-  'Marcelo': { password: 'Marce123', nombre: 'Marcelo Molina', rol: 'operario' }
+// Usuarios base del sistema (coincidentes con login.js y gestionUsuarios.js)
+const USUARIOS_BASE_BLOQUEO = {
+  'admin':      { password: 'admin123',   nombre: 'Administrador',       rol: 'admin' },
+  'calidad':    { password: 'calidad123', nombre: 'Operario Calidad',    rol: 'calidad' },
+  'produccion': { password: 'prod123',    nombre: 'Operario Producción',  rol: 'produccion' },
+  'supervisor': { password: 'super123',   nombre: 'Supervisor',          rol: 'supervisor' },
+  'Marcelo':    { password: 'Marce123',   nombre: 'Marcelo Molina',      rol: 'produccion' }
 };
+
+function obtenerUsuariosBloqueo() {
+  let extra = {};
+  try { extra = JSON.parse(localStorage.getItem('kira_usuarios')) || {}; } catch { extra = {}; }
+  const todos = { ...USUARIOS_BASE_BLOQUEO, ...extra };
+  for (const [k, v] of Object.entries(todos)) {
+    if (v && v.eliminado) {
+      delete todos[k];
+    }
+  }
+  return todos;
+}
 
 // Toggle para mostrar/ocultar contraseña en desbloqueo
 document.getElementById('togglePasswordDesbloqueo')?.addEventListener('click', function() {
@@ -56,7 +70,7 @@ document.getElementById('formDesbloqueo')?.addEventListener('submit', function(e
   
   try {
     const datosBloqueo = JSON.parse(bloqueo);
-    const usuario = USUARIOS[datosBloqueo.usuario];
+    const usuario = obtenerUsuariosBloqueo()[datosBloqueo.usuario];
     
     if (!usuario) {
       mostrarErrorDesbloqueo('Error: usuario no válido');

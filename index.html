@@ -907,9 +907,17 @@
             <div class="flex flex-wrap justify-between items-center gap-2 mb-1">
               <div>
                 <h2 class="font-black text-slate-700 uppercase text-sm">Gestión de usuarios</h2>
-                <p class="text-[11px] text-slate-500">Crear, editar y eliminar usuarios y sus roles. Los cambios se aplican en el próximo inicio de sesión.</p>
+                <p class="text-[11px] text-slate-500">Crear, editar y modificar contraseñas y roles de usuarios. Los cambios se aplican de inmediato.</p>
               </div>
-              <button class="btn bg-sky-700 text-white hover:bg-sky-800 text-xs py-1.5" onclick="abrirEditorUsuario()">+ Nuevo usuario</button>
+              <div class="flex items-center gap-2">
+                <button id="btnToggleAllPasswords" type="button" class="btn bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 text-xs py-1.5 flex items-center gap-1.5" onclick="alternarVerTodasPasswords()">
+                  <span>👁️</span> <span id="txtToggleAllPasswords">Mostrar contraseñas</span>
+                </button>
+                <button type="button" class="btn bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 text-xs py-1.5 flex items-center gap-1.5" onclick="restablecerTodosLosUsuariosBase()" title="Restablecer los usuarios base del sistema a sus valores originales">
+                  <span>↺</span> <span>Restablecer base</span>
+                </button>
+                <button class="btn bg-sky-700 text-white hover:bg-sky-800 text-xs py-1.5" onclick="abrirEditorUsuario()">+ Nuevo usuario</button>
+              </div>
             </div>
           </div>
           <div class="panel p-3 overflow-auto">
@@ -919,6 +927,7 @@
                   <th class="text-left">Usuario</th>
                   <th class="text-left">Nombre</th>
                   <th class="text-center">Rol</th>
+                  <th class="text-center">Contraseña</th>
                   <th class="text-center">Origen</th>
                   <th class="text-center no-print">Acciones</th>
                 </tr>
@@ -1352,7 +1361,19 @@
             <option value="admin">Administrador</option>
           </select>
         </label>
-        <label class="text-xs font-bold">Contraseña<input id="uPassword" type="password" class="field mt-1" placeholder="Dejar vacío para no cambiar (al editar)" autocomplete="new-password"></label>
+        <div class="space-y-1">
+          <label class="text-xs font-bold block">Contraseña</label>
+          <div class="relative flex items-center">
+            <input id="uPassword" type="password" class="field pr-10" placeholder="Ingresá la contraseña" autocomplete="new-password">
+            <button type="button" id="btnTogglePasswordModal" class="absolute right-2 text-slate-400 hover:text-slate-600 focus:outline-none p-1" onclick="alternarPasswordModal()" title="Mostrar/ocultar contraseña">
+              <svg id="iconoPasswordModal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-400" id="ayudaPasswordModal">Podés ver la contraseña actual o escribir una nueva para cambiarla.</p>
+        </div>
       </div>
       <div class="flex justify-end gap-2 mt-4">
         <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalUsuario')">Cancelar</button>

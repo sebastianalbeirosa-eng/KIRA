@@ -162,45 +162,45 @@ body {
 
 .login-card {
   background: white;
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-  padding: clamp(1.1rem, 3.5vh, 2.25rem) clamp(1.25rem, 2.5vw, 2.25rem);
+  padding: clamp(1rem, 2.5vh, 1.75rem) clamp(1rem, 2vw, 1.5rem);
   width: 100%;
-  max-width: 420px;
+  max-width: 350px;
   max-height: calc(100dvh - 2 * clamp(0.75rem, 3vh, 2rem));
   overflow-y: auto;
 }
 
 .user-icon-container {
-  width: clamp(56px, 9vh, 80px);
-  height: clamp(56px, 9vh, 80px);
+  width: clamp(48px, 6.5vh, 60px);
+  height: clamp(48px, 6.5vh, 60px);
   border-radius: 50%;
   border: 2px solid #3b82f6;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto clamp(0.75rem, 2vh, 1.5rem);
+  margin: 0 auto clamp(0.5rem, 1.5vh, 1rem);
 }
 
 .user-icon {
-  width: clamp(28px, 5vh, 40px);
-  height: clamp(28px, 5vh, 40px);
+  width: clamp(24px, 3.5vh, 30px);
+  height: clamp(24px, 3.5vh, 30px);
   color: #3b82f6;
 }
 
 .login-title {
-  font-size: clamp(1.35rem, 1.8vw, 1.6rem);
+  font-size: clamp(1.2rem, 1.5vw, 1.375rem);
   font-weight: 600;
   text-align: center;
   color: #0f172a;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
 .login-subtitle {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   text-align: center;
   color: #64748b;
-  margin-bottom: clamp(1rem, 3vh, 2rem);
+  margin-bottom: clamp(0.75rem, 2vh, 1.25rem);
 }
 
 .login-form {
@@ -208,15 +208,15 @@ body {
 }
 
 .form-group {
-  margin-bottom: clamp(0.75rem, 2vh, 1.25rem);
+  margin-bottom: clamp(0.6rem, 1.5vh, 0.95rem);
 }
 
 .form-label {
   display: block;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: #334155;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
 .input-container {
@@ -227,9 +227,9 @@ body {
 
 .input-icon {
   position: absolute;
-  left: 0.875rem;
-  width: 18px;
-  height: 18px;
+  left: 0.75rem;
+  width: 16px;
+  height: 16px;
   color: #94a3b8;
   pointer-events: none;
   transition: color 0.2s ease, transform 0.2s ease;
@@ -242,10 +242,10 @@ body {
 
 .form-input {
   width: 100%;
-  padding: 0.75rem 1rem 0.75rem 2.75rem;
+  padding: 0.6rem 0.75rem 0.6rem 2.35rem;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: 0.875rem;
+  font-size: 0.84rem;
   color: #0f172a;
   background: white;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
@@ -291,7 +291,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: clamp(0.9rem, 2.5vh, 1.5rem);
+  margin-bottom: clamp(0.7rem, 2vh, 1.15rem);
 }
 
 .checkbox-label {
@@ -301,20 +301,20 @@ body {
 }
 
 .checkbox-input {
-  width: 16px;
-  height: 16px;
-  margin-right: 0.5rem;
+  width: 15px;
+  height: 15px;
+  margin-right: 0.45rem;
   cursor: pointer;
   accent-color: #3b82f6;
 }
 
 .checkbox-text {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: #475569;
 }
 
 .forgot-password {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: #3b82f6;
   text-decoration: none;
   transition: color 0.2s;
@@ -328,10 +328,10 @@ body {
   background: #fef2f2;
   border: 1px solid #fecaca;
   color: #991b1b;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 0.875rem;
   border-radius: 8px;
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
+  font-size: 0.8125rem;
+  margin-bottom: 0.85rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -339,10 +339,10 @@ body {
 
 .btn-submit {
   width: 100%;
-  padding: 0.875rem 1.5rem;
+  padding: 0.65rem 1.25rem;
   background: #3b82f6;
   color: white;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   border: none;
   border-radius: 8px;
@@ -364,7 +364,7 @@ body {
 .divider {
   position: relative;
   text-align: center;
-  margin: clamp(0.75rem, 2vh, 1.5rem) 0;
+  margin: clamp(0.5rem, 1.5vh, 0.9rem) 0;
 }
 
 .divider::before {
@@ -380,18 +380,18 @@ body {
 .divider-text {
   position: relative;
   display: inline-block;
-  padding: 0 1rem;
+  padding: 0 0.85rem;
   background: white;
   color: #94a3b8;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .btn-corporate {
   width: 100%;
-  padding: 0.875rem 1.5rem;
+  padding: 0.65rem 1.25rem;
   background: white;
   color: #3b82f6;
-  font-size: 0.9375rem;
+  font-size: 0.84rem;
   font-weight: 500;
   border: 1px solid #3b82f6;
   border-radius: 8px;
@@ -408,26 +408,26 @@ body {
 }
 
 .btn-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .secure-connection {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  margin-top: clamp(0.75rem, 2vh, 1.5rem);
+  gap: 0.4rem;
+  margin-top: clamp(0.5rem, 1.5vh, 0.9rem);
 }
 
 .secure-icon {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   color: #64748b;
 }
 
 .secure-text {
-  font-size: 0.75rem;
+  font-size: 0.725rem;
   color: #64748b;
 }
 
@@ -479,7 +479,8 @@ body {
   }
   
   .login-card {
-    padding: 2rem 1.5rem;
+    padding: 1.5rem 1.25rem;
+    max-width: 350px;
   }
 }
 

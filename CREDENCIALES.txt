@@ -12,6 +12,20 @@ Contraseña:  admin123
 Rol:         Administrador
 
 ---------------------
+CALIDAD
+---------------------
+Usuario:     calidad
+Contraseña:  calidad123
+Rol:         Calidad
+
+---------------------
+PRODUCCIÓN
+---------------------
+Usuario:     produccion
+Contraseña:  prod123
+Rol:         Producción
+
+---------------------
 SUPERVISOR
 ---------------------
 Usuario:     supervisor
@@ -23,14 +37,17 @@ OPERARIO
 ---------------------
 Usuario:     Marcelo
 Contraseña:  Marce123
-Rol:         Operario
+Rol:         Operario (Producción)
 
 ========================================
-NOTA DE SEGURIDAD
+ADMINISTRACIÓN Y EDICIÓN DE CONTRASEÑAS
 ========================================
 
-Estas credenciales están almacenadas en el archivo login.js
-para propósitos de desarrollo y prueba.
+Desde el rol Administrador (usuario 'admin'):
+- Se pueden ver todas las contraseñas en la pestaña "Usuarios".
+- Se puede revelar cada contraseña individualmente con 👁️ o todas a la vez con "Mostrar contraseñas".
+- Se pueden editar y cambiar las contraseñas de todos los usuarios (incluso los usuarios base predefinidos).
+- Si se modifica un usuario base, se puede restablecer a sus valores originales con el botón "Restablecer".
 
 En un entorno de producción real, las credenciales deberían:
 - Estar almacenadas en un servidor backend seguro

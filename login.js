@@ -7,10 +7,11 @@
 // los que el admin cree se guardan en localStorage (ver gestión de usuarios).
 // Roles válidos: 'calidad', 'produccion', 'supervisor', 'admin'.
 const USUARIOS_BASE = {
-  'admin':      { password: 'admin123',  nombre: 'Administrador',      rol: 'admin' },
-  'calidad':    { password: 'calidad123', nombre: 'Operario Calidad',   rol: 'calidad' },
-  'produccion': { password: 'prod123',    nombre: 'Operario Producción', rol: 'produccion' },
-  'supervisor': { password: 'super123',   nombre: 'Supervisor',         rol: 'supervisor' }
+  'admin':      { password: 'admin123',   nombre: 'Administrador',       rol: 'admin' },
+  'calidad':    { password: 'calidad123', nombre: 'Operario Calidad',    rol: 'calidad' },
+  'produccion': { password: 'prod123',    nombre: 'Operario Producción',  rol: 'produccion' },
+  'supervisor': { password: 'super123',   nombre: 'Supervisor',          rol: 'supervisor' },
+  'Marcelo':    { password: 'Marce123',   nombre: 'Marcelo Molina',      rol: 'produccion' }
 };
 
 /**
@@ -20,7 +21,13 @@ const USUARIOS_BASE = {
 function obtenerUsuarios() {
   let extra = {};
   try { extra = JSON.parse(localStorage.getItem('kira_usuarios')) || {}; } catch { extra = {}; }
-  return { ...USUARIOS_BASE, ...extra };
+  const todos = { ...USUARIOS_BASE, ...extra };
+  for (const [k, v] of Object.entries(todos)) {
+    if (v && v.eliminado) {
+      delete todos[k];
+    }
+  }
+  return todos;
 }
 
 // Toggle para mostrar/ocultar contraseña

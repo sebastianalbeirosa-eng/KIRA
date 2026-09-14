@@ -32,25 +32,25 @@ export const PERMISOS = {
     etiqueta: 'Calidad',
     tabs: ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca'],
     tabInicial: 'dash',
-    caps: { cargarCalidad: true, cargarProduccion: false, soloLectura: false, gestionUsuarios: false, constructorPlanta: true }
+    caps: { cargarCalidad: true, cargarProduccion: false, soloLectura: false, gestionUsuarios: false, constructorPlanta: true, verAsistente: true }
   },
   produccion: {
     etiqueta: 'Producción',
     tabs: ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca'],
     tabInicial: 'dash',
-    caps: { cargarCalidad: false, cargarProduccion: true, soloLectura: false, gestionUsuarios: false, constructorPlanta: true }
+    caps: { cargarCalidad: false, cargarProduccion: true, soloLectura: false, gestionUsuarios: false, constructorPlanta: true, verAsistente: true }
   },
   supervisor: {
     etiqueta: 'Supervisor',
-    tabs: ['planta', 'analisis', 'historico'],
+    tabs: ['planta', 'analisis', 'acerca'],
     tabInicial: 'planta',
-    caps: { cargarCalidad: false, cargarProduccion: false, soloLectura: true, gestionUsuarios: false, constructorPlanta: false }
+    caps: { cargarCalidad: false, cargarProduccion: false, soloLectura: true, gestionUsuarios: false, constructorPlanta: false, verAsistente: false }
   },
   admin: {
     etiqueta: 'Administrador',
     tabs: ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca', 'usuarios'],
     tabInicial: 'planta',
-    caps: { cargarCalidad: true, cargarProduccion: true, soloLectura: false, gestionUsuarios: true, constructorPlanta: true }
+    caps: { cargarCalidad: true, cargarProduccion: true, soloLectura: false, gestionUsuarios: true, constructorPlanta: true, verAsistente: true }
   }
 };
 
@@ -77,6 +77,16 @@ export function rolActual() {
     return normalizarRol(JSON.parse(raw).rol);
   } catch {
     return ROL_DEFECTO;
+  }
+}
+
+/** Devuelve el objeto del usuario logueado ({ username, nombre, rol }) o null si no hay sesión. */
+export function usuarioActual() {
+  try {
+    const raw = sessionStorage.getItem('kiraSession') || localStorage.getItem('kiraSession');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
 }
 

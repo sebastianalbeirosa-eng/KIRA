@@ -32,11 +32,44 @@ export function cargarDB() {
 export let db = cargarDB();
 
 /**
- * Guarda el estado actual de "db" en localStorage.
- * Se llama después de CUALQUIER modificación a los datos (crear, editar, borrar).
+ * Recarga la base de datos en memoria desde localStorage mutando el objeto db.
+ */
+export function recargarDB() {
+  try {
+    const cargado = cargarDB();
+    for (const k of Object.keys(db)) {
+      delete db[k];
+    }
+    Object.assign(db, cargado);
+  } catch {}
+  return db;
+}
+
+export const SYNC_BLOQUE_KEY = 'kira_sync_bloque';
+const canalKira = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kira_sync') : null;
+
+/**
+ * Guarda el estado actual de "db" en localStorage (persistencia silenciosa).
+ * Se llama tras cualquier cambio para no perder datos en borrador.
  */
 export function persistir() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+}
+
+/**
+ * Emite la sincronización en tiempo real en bloque hacia todas las pantallas y pestañas.
+ * Se invoca ÚNICAMENTE al presionar botones de guardar, enviar o actualizar datos.
+ * @param {string} [origen] - Identificador de la acción (ej: 'guardarParada', 'enviarProduccion')
+ */
+export function emitirSincronizacionBloque(origen = '') {
+  persistir();
+  const timestamp = Date.now();
+  try {
+    localStorage.setItem(SYNC_BLOQUE_KEY, `${timestamp}|${origen}`);
+  } catch {}
+  try {
+    canalKira?.postMessage({ tipo: 'sync_bloque', origen, timestamp });
+  } catch {}
 }
 
 /**

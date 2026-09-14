@@ -30,16 +30,14 @@
 */
 
 import { esc, valor } from '../nucleo/utilidades.js';
-import { persistir } from '../nucleo/almacenamiento.js';
+import { persistir, emitirSincronizacionBloque } from '../nucleo/almacenamiento.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import {
   sesion, lineasActivas, lineaPorId, nombreLinea, asegurarObjetivosSesion
 } from '../nucleo/estado.js';
-// nivelPorValor/UMBRAL_DEFECTO: mismo criterio de criticidad que el mapa de
-// calor de defectos. Dependencia circular con vistaDePlanta segura porque solo
-// se usan dentro de funciones (nunca al cargar el módulo).
 import { nivelPorValor, UMBRAL_DEFECTO } from './vistaDePlanta.js';
 import { ultimaTomaEnviada } from './cargaCalidad.js';
+import { usuarioActual } from '../nucleo/roles.js';
 
 const numOrNull = v => (v === '' || v === null || v === undefined || isNaN(parseFloat(v))) ? null : parseFloat(v);
 
@@ -159,11 +157,26 @@ export function renderProduccionInline() {
   }
 
   const o = objDe(lineaId);
+  const s = sesion();
+  const usr = usuarioActual();
+  if (usr && (usr.rol === 'produccion' || usr.rol === 'operario') && (usr.nombre || usr.usuario)) {
+    s.operarioProduccion = usr.nombre || usr.usuario;
+    persistir();
+  }
+  const opProdNombre = (usr && (usr.rol === 'produccion' || usr.rol === 'operario') && (usr.nombre || usr.usuario))
+    ? (usr.nombre || usr.usuario)
+    : (s.operarioProduccion || 'Operario Producción');
 
   cont.innerHTML = `
     <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
       <div>
-        <h2 class="font-black text-slate-700 uppercase text-sm">Objetivos, quemado y respuesta a calidad · ${esc(nombreLinea(lineaId))}</h2>
+        <div class="flex items-center gap-2 flex-wrap mb-0.5">
+          <h2 class="font-black text-slate-700 uppercase text-sm">Objetivos, quemado y respuesta a calidad · ${esc(nombreLinea(lineaId))}</h2>
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+            <span>👷 Operario:</span>
+            <span class="font-extrabold uppercase">${esc(opProdNombre)}</span>
+          </span>
+        </div>
         <p class="text-[11px] text-slate-500">Objetivos del turno, m² quemados y acciones frente a los defectos que envía calidad. Cambiá de línea desde "Área monitoreada".</p>
       </div>
       <button type="button" class="btn ${o.accionesProdEnviadas ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-700 hover:bg-sky-800'} text-white text-xs px-4 py-1.5"
@@ -247,14 +260,26 @@ export function onCambioObsProduccion(el) {
 
 /** Envía la nota de producción: guarda lo tipeado y refresca Vista de Planta. */
 export function enviarObsProduccion() {
+  const s = sesion();
+  const usr = usuarioActual();
+  if (usr && (usr.rol === 'produccion' || usr.rol === 'operario') && (usr.nombre || usr.usuario)) {
+    s.operarioProduccion = usr.nombre || usr.usuario;
+  }
   const el = document.getElementById('obsProduccionTxt');
-  if (el) { sesion().notaTurno = el.value; persistir(); }
+  if (el) { s.notaTurno = el.value; }
+  persistir();
   if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  emitirSincronizacionBloque('enviarObsProduccion');
   mostrarAlertaKira('Nota de producción enviada. Aparece en Vista de Planta.', 'Producción', 'exito');
 }
 
 /** Marca las acciones como enviadas y refresca Vista de Planta. */
 export function enviarProduccion(lineaId) {
+  const s = sesion();
+  const usr = usuarioActual();
+  if (usr && (usr.rol === 'produccion' || usr.rol === 'operario') && (usr.nombre || usr.usuario)) {
+    s.operarioProduccion = usr.nombre || usr.usuario;
+  }
   const o = objDe(lineaId);
   o.accionesProdEnviadas = true;
   // Volcar las acciones al mapa de calor de defectos (s.defectos) antes de refrescar.
@@ -262,6 +287,8 @@ export function enviarProduccion(lineaId) {
   persistir();
   renderProduccionInline();
   if (typeof window.renderTodo === 'function') window.renderTodo();
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  emitirSincronizacionBloque('enviarProduccion');
   mostrarAlertaKira('Datos de producción enviados. Se reflejan en Vista de Planta.', 'Producción', 'exito');
 }
 
@@ -293,9 +320,17 @@ export function renderRespuestaDefectosVistaPlanta() {
 
   if (!tomas.length) { cont.innerHTML = ''; return; }
 
+  const opNom = sesion().operarioProduccion || 'Producción';
+
   cont.innerHTML = `
     <div class="panel p-3">
-      <h2 class="font-black text-slate-700 uppercase text-sm mb-3">Respuesta a defectos de calidad · ${esc(nombreLinea(lineaId))} · ${tomas.length} toma(s)</h2>
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+        <h2 class="font-black text-slate-700 uppercase text-sm">Respuesta a defectos de calidad · ${esc(nombreLinea(lineaId))} · ${tomas.length} toma(s)</h2>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+          <span>👷 Operario:</span>
+          <span class="font-extrabold uppercase">${esc(opNom)}</span>
+        </span>
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         ${tomas.map((x, idx) => {
           const t = x.t;
@@ -398,6 +433,7 @@ async function agregarFotosProd(fileList) {
     for (const f of files) arr.push(await comprimirImagen(f));
     persistir();
     renderFotosProduccion();
+    emitirSincronizacionBloque('fotosProduccion');
   } catch (e) {
     mostrarAlertaKira('No se pudo procesar alguna imagen. Probá con otra.', 'Fotos del turno', 'advertencia');
   }
@@ -421,6 +457,7 @@ export function quitarFotoProduccion(idx) {
   arr.splice(idx, 1);
   persistir();
   renderFotosProduccion();
+  emitirSincronizacionBloque('fotosProduccion');
 }
 
 // ==========================================================

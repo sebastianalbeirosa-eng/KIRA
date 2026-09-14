@@ -190,6 +190,10 @@ export function claveSesion(fecha = valor('fecha'), turno = valor('turno')) {
 export function nuevaSesion() {
   return {
     supervisor: '',
+    operarioCalidad: '',
+    operarioProduccion: '',
+    productoCalidad: '',
+    formatoCalidad: '',
     paradas: [],
     acciones: [],
     defectos: [],
@@ -202,6 +206,24 @@ export function nuevaSesion() {
     },
     actualizada: new Date().toISOString()
   };
+}
+
+/**
+ * Busca el último producto y formato registrado en la sesión más reciente.
+ * Garantiza la continuidad de la línea de proceso continuo al cambiar de turno.
+ */
+export function ultimoProductoFormato() {
+  const keys = Object.keys(db.sesiones || {}).sort((a, b) => b.localeCompare(a));
+  for (const k of keys) {
+    const s = db.sesiones[k];
+    if (s && ((s.productoCalidad && s.productoCalidad.trim()) || (s.formatoCalidad && s.formatoCalidad.trim()))) {
+      return {
+        producto: (s.productoCalidad || '').trim(),
+        formato: (s.formatoCalidad || '').trim()
+      };
+    }
+  }
+  return { producto: '', formato: '' };
 }
 
 /** Devuelve la sesión de turno actualmente activa (fecha + turno seleccionados). */
@@ -218,6 +240,19 @@ export function sesion() {
   // acá, en cada acceso, así también repara sesiones viejas guardadas
   // antes de este fix.
   db.sesiones[key].turno = turno;
+  if (typeof db.sesiones[key].operarioCalidad !== 'string') db.sesiones[key].operarioCalidad = '';
+  if (typeof db.sesiones[key].operarioProduccion !== 'string') db.sesiones[key].operarioProduccion = '';
+  if (typeof db.sesiones[key].productoCalidad !== 'string') db.sesiones[key].productoCalidad = '';
+  if (typeof db.sesiones[key].formatoCalidad !== 'string') db.sesiones[key].formatoCalidad = '';
+
+  // Continuidad de proceso continuo: si la sesión no tiene producto/formato cargado,
+  // hereda automáticamente el último producto y formato del turno anterior
+  if (!db.sesiones[key].productoCalidad.trim() && !db.sesiones[key].formatoCalidad.trim()) {
+    const ult = ultimoProductoFormato();
+    if (ult.producto) db.sesiones[key].productoCalidad = ult.producto;
+    if (ult.formato) db.sesiones[key].formatoCalidad = ult.formato;
+  }
+
   return db.sesiones[key];
 }
 
@@ -289,51 +324,164 @@ export function crearTomaCalidad(base = {}) {
 }
 
 /**
- * Catálogo de defectos de calidad (abreviatura + nombre) a nivel planta, común
- * a todos los turnos. Se auto-completa: cuando el auditor escribe un código
- * nuevo, se guarda para ofrecerlo luego en un datalist (ver guardarDefectoCalidadSiEsNuevo).
- * Se siembra con las abreviaturas típicas la primera vez.
+ * Catálogo completo de defectos de calidad (abreviatura + nombre), ordenado
+ * alfabéticamente por código. Se siembra la primera vez y migra si el
+ * catálogo guardado tiene menos entradas que este listado oficial.
  */
 const DEFECTOS_CALIDAD_INICIALES = [
-  { codigo: 'GL', nombre: 'Grieta lateral' },
-  { codigo: 'SB', nombre: 'Sopladura' },
-  { codigo: 'SE', nombre: 'Separación' },
-  { codigo: 'BS', nombre: 'Baja selección' },
-  { codigo: 'DTE', nombre: 'Despunte' },
-  { codigo: 'B', nombre: 'Bache' },
-  { codigo: 'GI', nombre: 'Grieta interna' },
-  { codigo: 'T', nombre: 'Tono' }
+  { codigo: 'B',     nombre: 'Balsa · Corte de campana' },
+  { codigo: 'BP',    nombre: 'Baldosa perdida por QNG' },
+  { codigo: 'BR',    nombre: 'Placa partida o baldosa rota' },
+  { codigo: 'BS',    nombre: 'Borde arrollado / saltado' },
+  { codigo: 'CH',    nombre: 'Camino de hormiga' },
+  { codigo: 'CN',    nombre: 'Corazón negro' },
+  { codigo: 'D',     nombre: 'Desplazado · Defecto de decorado' },
+  { codigo: 'DP',    nombre: 'Falta o defecto de protectora' },
+  { codigo: 'DT',    nombre: 'Diferencia de tono' },
+  { codigo: 'DTE',   nombre: 'Despunte · Vértice saltado' },
+  { codigo: 'EA',    nombre: 'Esmalte abierto' },
+  { codigo: 'F',     nombre: 'Filtrado' },
+  { codigo: 'FD',    nombre: 'Falta de decorado' },
+  { codigo: 'FDF',   nombre: 'Falso defecto' },
+  { codigo: 'FR',    nombre: 'Franjeado de esmalte · Martillado' },
+  { codigo: 'G',     nombre: 'Grumo' },
+  { codigo: 'GA',    nombre: 'Gota de aceite' },
+  { codigo: 'GE',    nombre: 'Gota de esmalte' },
+  { codigo: 'GEN',   nombre: 'Gota de engobe rulo' },
+  { codigo: 'GG',    nombre: 'Gota de agua' },
+  { codigo: 'GH',    nombre: 'Gota de horno' },
+  { codigo: 'GI',    nombre: 'Grieta interna' },
+  { codigo: 'GL',    nombre: 'Grieta lateral o en borde' },
+  { codigo: 'GNER',  nombre: 'Grieta en nervadura' },
+  { codigo: 'GRES',  nombre: 'Grieta de esmalte' },
+  { codigo: 'GT',    nombre: 'Gota de tinta' },
+  { codigo: 'H',     nombre: 'Pinchado o hervido' },
+  { codigo: 'MA',    nombre: 'Mancha · Mancha blanca' },
+  { codigo: 'MO',    nombre: 'Montado horno' },
+  { codigo: 'MP',    nombre: 'Marcado de prensa' },
+  { codigo: 'PC',    nombre: 'Polvo contaminado · Explosión' },
+  { codigo: 'PD',    nombre: 'Placa deformada' },
+  { codigo: 'PLANAR',nombre: 'Torcido por planar' },
+  { codigo: 'PSD',   nombre: 'Placa sin decorar' },
+  { codigo: 'PTN',   nombre: 'Punto negro' },
+  { codigo: 'RP',    nombre: 'Raya de pasta' },
+  { codigo: 'RY',    nombre: 'Raya de Kerajet' },
+  { codigo: 'RYC',   nombre: 'Raya de campana' },
+  { codigo: 'S',     nombre: 'Solapado' },
+  { codigo: 'SB',    nombre: 'Suciedad sobre bizcocho' },
+  { codigo: 'SE',    nombre: 'Suciedad sobre esmalte' },
+  { codigo: 'T',     nombre: 'Torcido' }
 ];
 
-/** Devuelve el catálogo de defectos de calidad (sembrándolo la primera vez). */
+/** Devuelve el catálogo de defectos de calidad (depurando duplicados y garantizando catálogo único). */
 export function catalogoDefectosCalidad() {
-  if (!Array.isArray(db.defectosCalidad) || !db.defectosCalidad.length) {
-    db.defectosCalidad = DEFECTOS_CALIDAD_INICIALES.map(d => ({ ...d }));
+  const mapa = new Map();
+
+  // 1. Catálogo base oficial
+  DEFECTOS_CALIDAD_INICIALES.forEach(d => {
+    const k = d.codigo.trim().toUpperCase();
+    mapa.set(k, { codigo: d.codigo.trim(), nombre: (d.nombre || '').trim() });
+  });
+
+  // 2. Si el usuario agregó defectos manuales válidos en db.defectosCalidad, preservarlos
+  if (Array.isArray(db.defectosCalidad)) {
+    db.defectosCalidad.forEach(d => {
+      if (!d || !d.codigo) return;
+      let cod = String(d.codigo).trim();
+      let nom = String(d.nombre || '').trim();
+
+      // Si el código vino contaminado como "COD - Nombre", extraer solo la sigla
+      if (cod.includes(' - ')) {
+        const partes = cod.split(' - ');
+        cod = partes[0].trim();
+        nom = partes.slice(1).join(' - ').trim();
+      }
+
+      const k = cod.toUpperCase();
+      // Si no existe en el mapa oficial, agregarlo como nuevo defecto
+      if (!mapa.has(k) && cod.length > 0 && cod.length <= 12) {
+        mapa.set(k, { codigo: cod, nombre: nom || cod });
+      }
+    });
   }
+
+  // Lista ordenada alfabéticamente por código
+  const listaLimpia = Array.from(mapa.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
+  db.defectosCalidad = listaLimpia;
   return db.defectosCalidad;
 }
 
 /**
  * Guarda un defecto de calidad en el catálogo si el código todavía no existe.
- * @param {string} codigo  abreviatura (GL, DTE, ...)
+ * @param {string} codigo  abreviatura (GL, DTE, ...) o texto
  * @param {string} nombre  nombre completo opcional
  */
 export function guardarDefectoCalidadSiEsNuevo(codigo, nombre = '') {
-  const cod = String(codigo || '').trim();
+  let cod = String(codigo || '').trim();
+  let nom = String(nombre || '').trim();
   if (!cod) return;
+
+  // Si vino en formato "COD - Nombre", separar sigla y nombre
+  if (cod.includes(' - ')) {
+    const partes = cod.split(' - ');
+    cod = partes[0].trim();
+    if (!nom || nom === codigo) nom = partes.slice(1).join(' - ').trim();
+  }
+
   const cat = catalogoDefectosCalidad();
-  const existe = cat.find(d => d.codigo.toLowerCase() === cod.toLowerCase());
+  const existe = cat.find(d => d.codigo.toUpperCase() === cod.toUpperCase());
   if (existe) {
-    if (nombre && !existe.nombre) existe.nombre = nombre.trim();
+    if (nom && !existe.nombre) existe.nombre = nom;
   } else {
-    cat.push({ codigo: cod, nombre: (nombre || '').trim() });
+    cat.push({ codigo: cod, nombre: nom || cod });
+    cat.sort((a, b) => a.codigo.localeCompare(b.codigo));
   }
   persistir();
+}
+
+/**
+ * Intenta sincronizar el catálogo de defectos desde defectos.json (en la raíz)
+ * cuando la aplicación corre bajo un servidor web (HTTP/HTTPS).
+ */
+export async function cargarCatalogoDefectosDesdeJson() {
+  try {
+    if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+      const resp = await fetch('./defectos.json');
+      if (resp.ok) {
+        const datos = await resp.json();
+        if (Array.isArray(datos) && datos.length > 0) {
+          catalogoDefectosCalidad();
+          const codigos = new Set((db.defectosCalidad || []).map(d => d.codigo.toUpperCase()));
+          let cambio = false;
+          datos.forEach(d => {
+            if (d && d.codigo && !codigos.has(d.codigo.toUpperCase())) {
+              db.defectosCalidad.push({ codigo: d.codigo.trim(), nombre: (d.nombre || '').trim() });
+              codigos.add(d.codigo.toUpperCase());
+              cambio = true;
+            }
+          });
+          if (cambio) {
+            persistir();
+            if (typeof window.refrescarDatalistDefectos === 'function') {
+              window.refrescarDatalistDefectos();
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Carga de defectos.json no disponible:', err);
+  }
 }
 
 /** Garantiza que la sesión tenga la estructura de objetivos por línea, migrando datos viejos si hace falta. */
 export function asegurarObjetivosSesion(s) {
   if (!s.objetivos) s.objetivos = {};
+  if (typeof s.operarioCalidad !== 'string') s.operarioCalidad = '';
+  if (typeof s.operarioProduccion !== 'string') s.operarioProduccion = '';
+  if (typeof s.productoCalidad !== 'string') s.productoCalidad = '';
+  if (typeof s.formatoCalidad !== 'string') s.formatoCalidad = '';
+
   if (!s.objetivos.porLinea) {
     s.objetivos.porLinea = {};
     if (s.objetivos.l1) s.objetivos.porLinea['L1'] = { ...s.objetivos.l1 };
@@ -351,7 +499,7 @@ export function asegurarObjetivosSesion(s) {
         lecturasQuemado: Array(3).fill(null).map(() => ({ hora: '', real: 0 })),
         // --- CALIDAD (planilla del auditor de calidad) ---
         calidad: 90, realCalidad: 0,
-        operarioCalidad: '',
+        operarioCalidad: s.operarioCalidad || '',
         observacionesCalidad: '', // texto libre: observaciones generales del turno
         tomasCalidad: Array(8).fill(null).map(() => crearTomaCalidad()),
         // Respuestas de producción a los defectos (flag de "enviado" para reflejar en Vista de Planta).
@@ -368,7 +516,9 @@ export function asegurarObjetivosSesion(s) {
         o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));
       }
       // Migración/normalización de la planilla de calidad por tomas.
-      if (typeof o.operarioCalidad !== 'string') o.operarioCalidad = o.auditor || '';
+      if (typeof o.operarioCalidad !== 'string') o.operarioCalidad = s.operarioCalidad || o.auditor || '';
+      if (!s.operarioCalidad && o.operarioCalidad) s.operarioCalidad = o.operarioCalidad;
+      if (s.operarioCalidad && !o.operarioCalidad) o.operarioCalidad = s.operarioCalidad;
       if (typeof o.observacionesCalidad !== 'string') o.observacionesCalidad = '';
       if (typeof o.accionesProdEnviadas !== 'boolean') o.accionesProdEnviadas = false;
       if (!Array.isArray(o.tomasCalidad) || !o.tomasCalidad.length) {

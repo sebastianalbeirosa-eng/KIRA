@@ -9,7 +9,7 @@
 
 import { persistir } from '../nucleo/almacenamiento.js';
 import { valor, numero, esc, abrir, cerrar } from '../nucleo/utilidades.js';
-import { sesion, lineasActivas, nombreLinea } from '../nucleo/estado.js';
+import { sesion, lineasActivas, nombreLinea, catalogoDefectosCalidad } from '../nucleo/estado.js';
 import { mostrarConfirmacionKira } from '../nucleo/alertasKira.js';
 
 import { renderTodo } from './vistaDePlanta.js';
@@ -24,6 +24,7 @@ export function asegurarDefectosSesion(s) {
  * @param {Object|null} defectoObj - Si viene con datos, es edición; si no, es alta nueva.
  */
 export function abrirDefecto(defectoObj = null) {
+  if (typeof window.refrescarDatalistDefectos === 'function') window.refrescarDatalistDefectos();
   const primeraLinea = lineasActivas()[0]?.id || 'GENERAL';
   if (defectoObj) {
     document.getElementById('modalDefectoTitulo').textContent = 'Modificar defecto de calidad';
@@ -55,11 +56,17 @@ export function guardarDefecto(e) {
   const s = sesion();
   asegurarDefectosSesion(s);
   const editId = valor('editDefectoId');
+  let nombreDef = valor('dNombre').trim();
+  if (nombreDef) {
+    const cat = catalogoDefectosCalidad();
+    const porCodigo = cat.find(d => d.codigo.toUpperCase() === nombreDef.toUpperCase());
+    if (porCodigo) nombreDef = `${porCodigo.codigo} - ${porCodigo.nombre}`;
+  }
   const item = {
     id: editId || String(Date.now()),
     linea: valor('dLinea'),
     hora: valor('dHora'),
-    nombre: valor('dNombre').trim(),
+    nombre: nombreDef,
     porcentaje: numero('dPorcentaje'),
     accion: valor('dAccion').trim(),
     obs: valor('dObs').trim()

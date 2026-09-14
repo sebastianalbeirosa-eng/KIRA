@@ -82,6 +82,7 @@ function validarCredenciales(username, password) {
 function guardarSesion(usuario, recordar) {
   const sesion = {
     usuario: usuario.username,
+    username: usuario.username,
     nombre: usuario.nombre,
     rol: usuario.rol,
     timestamp: Date.now()

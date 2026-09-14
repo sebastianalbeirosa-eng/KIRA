@@ -65,7 +65,10 @@ function paginaAsakaiProduccion(linea) {
   asegurarObjetivosSesion(s);
   asegurarProduccionSesion(s);
 
-  const prod = s.productoPorLinea?.[linea.id] || { producto: '', formato: '' };
+  const prod = {
+    producto: s.productoPorLinea?.[linea.id]?.producto || s.productoCalidad || '',
+    formato: s.productoPorLinea?.[linea.id]?.formato || s.formatoCalidad || ''
+  };
   const o = s.objetivos?.porLinea?.[linea.id] || {};
   const kpis = calcularKpisPlanta(linea.id);
 
@@ -169,7 +172,10 @@ function paginaAsakaiCalidad(linea) {
   asegurarObjetivosSesion(s);
   asegurarProduccionSesion(s);
 
-  const prod = s.productoPorLinea?.[linea.id] || { producto: '', formato: '' };
+  const prod = {
+    producto: s.productoPorLinea?.[linea.id]?.producto || s.productoCalidad || '',
+    formato: s.productoPorLinea?.[linea.id]?.formato || s.formatoCalidad || ''
+  };
   const o = s.objetivos?.porLinea?.[linea.id] || {};
   const kpis = calcularKpisPlanta(linea.id);
 
@@ -217,7 +223,7 @@ function paginaAsakaiCalidad(linea) {
       ${kpi('m² CLASIFICADOS', kpis.clasifVal != null ? `${kpis.clasifVal.toLocaleString('es-AR')} m²` : '—')}
       ${kpi('ROTURA', kpis.roturaVal != null ? `${kpis.roturaVal}%` : '—')}
       ${kpi('DEFECTO CRÍTICO', kpis.defectoPreponderante ? `${kpis.defectoPreponderante.nombre} · ${kpis.defectoPreponderante.porcentaje}%` : 'Sin defectos')}
-      ${kpi('OPERARIO', o.operarioCalidad || '—')}
+      ${kpi('OPERARIO', o.operarioCalidad || s.operarioCalidad || '—')}
     </section>
 
     <section class="asakai-block">
@@ -309,21 +315,18 @@ function renderResumenImpresion() {
   const s = sesion();
   const lineaId = valor('lineaVista') || 'TODAS';
   const nombreArea = lineaId === 'TODAS' ? 'Todas las líneas' : nombreLinea(lineaId);
-  let producto = '', formato = '';
-  if (lineaId !== 'TODAS' && s.productoPorLinea && s.productoPorLinea[lineaId]) {
-    producto = s.productoPorLinea[lineaId].producto || 'No especificado';
-    formato = s.productoPorLinea[lineaId].formato || 'No especificado';
-  }
+  const producto = (lineaId !== 'TODAS' && s.productoPorLinea?.[lineaId]?.producto) || s.productoCalidad || '';
+  const formato = (lineaId !== 'TODAS' && s.productoPorLinea?.[lineaId]?.formato) || s.formatoCalidad || '';
+  const opCal = s.operarioCalidad || '';
   contenedor.innerHTML = `
     <div style="display:flex; gap:8mm; flex-wrap:wrap; align-items:baseline;">
       <div><strong>Fecha:</strong> <span>${esc(fmtFecha(valor('fecha')))}</span></div>
       <div><strong>Turno:</strong> <span>${esc(valor('turno'))}</span></div>
       <div><strong>Supervisor:</strong> <span>${esc(s.supervisor || 'No asignado')}</span></div>
+      ${opCal ? `<div><strong>Operario Calidad:</strong> <span>${esc(opCal)}</span></div>` : ''}
+      ${producto ? `<div><strong>Producto:</strong> <span>${esc(producto)}</span></div>` : ''}
+      ${formato ? `<div><strong>Formato:</strong> <span>${esc(formato)}</span></div>` : ''}
       <div><strong>Área:</strong> <span>${esc(nombreArea)}</span></div>
-      ${lineaId !== 'TODAS' ? `
-        <div><strong>Producto:</strong> <span>${esc(producto)}</span></div>
-        <div><strong>Formato:</strong> <span>${esc(formato)}</span></div>
-      ` : ''}
     </div>`;
 }
 

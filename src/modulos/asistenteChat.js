@@ -100,6 +100,7 @@ function agregarMensaje(texto, tipo) {
 
 /** Abre/cierra el panel del asistente. Dibuja las preguntas prearmadas la primera vez. */
 export function alternarAsistente() {
+  if (document.body.classList.contains('modo-supervisor')) return;
   const panel = document.getElementById('panelAsistente');
   if (!panel) return;
   const seVaAAbrir = panel.classList.contains('hidden');

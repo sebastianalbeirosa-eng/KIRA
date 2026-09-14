@@ -30,11 +30,11 @@
 */
 
 import { esc, valor } from '../nucleo/utilidades.js';
-import { persistir } from '../nucleo/almacenamiento.js';
+import { persistir, emitirSincronizacionBloque } from '../nucleo/almacenamiento.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import {
   sesion, lineasActivas, lineaPorId, nombreLinea, asegurarObjetivosSesion,
-  crearTomaCalidad
+  crearTomaCalidad, catalogoDefectosCalidad, guardarDefectoCalidadSiEsNuevo
 } from '../nucleo/estado.js';
 import { asegurarDefectosSesion } from './gestionDefectos.js';
 
@@ -102,7 +102,7 @@ function inputToma(lineaId, i, sub, tipo, valorActual, extraClass = '', placehol
 function htmlDefectos(lineaId, i, defectos) {
   const filas = defectos.map((d, j) => `
     <div class="flex flex-wrap items-center gap-1 mb-1">
-      <input type="text" value="${esc(d.nombre || '')}" placeholder="Defecto"
+      <input type="text" list="listaDefectosCalidad" value="${esc(d.nombre || '')}" placeholder="Defecto (código o nombre)"
         class="field text-[11px] p-1 flex-1 min-w-[110px]" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="defectos" data-cal-fila="${j}" data-cal-campo="nombre">
       <input type="number" step="0.01" min="0" value="${numAttr(d.pct)}" placeholder="%"
@@ -123,7 +123,7 @@ function htmlDefectos(lineaId, i, defectos) {
 function htmlRoturas(lineaId, i, roturas) {
   const filas = roturas.map((d, j) => `
     <div class="flex flex-wrap items-center gap-1 mb-1">
-      <input type="text" value="${esc(d.nombre || '')}" placeholder="Defecto a rotura"
+      <input type="text" list="listaDefectosCalidad" value="${esc(d.nombre || '')}" placeholder="Defecto a rotura (código o nombre)"
         class="field text-[11px] p-1 flex-1 min-w-[110px]" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="roturas" data-cal-fila="${j}" data-cal-campo="nombre">
       <input type="number" step="0.01" min="0" value="${numAttr(d.pct)}" placeholder="%"
@@ -275,11 +275,23 @@ function htmlTomaCalidad(lineaId, toma, i) {
 }
 
 
+/** Repuebla el datalist con todos los defectos del catálogo oficial con sus códigos e iniciales. */
+export function refrescarDatalistDefectos() {
+  const dl = document.getElementById('listaDefectosCalidad');
+  if (!dl) return;
+  const catalogo = catalogoDefectosCalidad();
+  dl.innerHTML = catalogo.map(d => {
+    const val = `${d.codigo} - ${d.nombre}`;
+    return `<option value="${esc(val)}"></option>`;
+  }).join('');
+}
+
 /**
  * Renderiza el sinóptico de calidad INLINE en #panelCalidadInline, para la
  * línea seleccionada en "Área monitoreada". Llamado desde renderTodo().
  */
 export function renderPlanillaCalidadInline() {
+  refrescarDatalistDefectos();
   const cont = document.getElementById('panelCalidadInline');
   if (!cont) return;
 
@@ -466,11 +478,19 @@ export function onCambioCalidad(el) {
     const sub = el.getAttribute('data-cal-sub');
     if (sub === 'hora' || sub === 'producto' || sub === 'formato') toma[sub] = raw.trim ? raw.trim() : raw;
     else toma[sub] = numOrNull(raw); // global, parcial1, tono, m2, vacioHorno, segunda, rotura
+
+    // Si el usuario ingresó un valor y la toma no tiene hora asignada, precargar hora del sistema
+    if (!toma.hora && (toma.global != null || toma.parcial1 != null)) {
+      toma.hora = horaSistema();
+      const horaInput = document.querySelector(`[data-cal-linea="${lineaId}"][data-cal-toma="${i}"][data-cal-sub="hora"]`);
+      if (horaInput) horaInput.value = toma.hora;
+    }
   }
   derivarKpisCalidad(o);
   // El producto/formato vigente se refleja en la cabecera (Producto/Formato).
   if (window.cargarCabeceraCalidad) window.cargarCabeceraCalidad();
   persistir();
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
 }
 
 /** Observaciones generales del turno de una línea (texto libre). */
@@ -487,6 +507,7 @@ export function enviarObsCalidad(lineaId) {
   const el = document.getElementById('obsCalidadTxt');
   if (el) { objDe(lineaId).observacionesCalidad = el.value; persistir(); }
   if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  emitirSincronizacionBloque('enviarObsCalidad');
   mostrarAlertaKira('Nota de calidad enviada. Aparece en Vista de Planta.', 'Calidad', 'exito');
 }
 
@@ -499,7 +520,35 @@ export function onCambioLista(el) {
   const campo = el.getAttribute('data-cal-campo'); // 'nombre' | 'pct' | 'aclaracion'
   const toma = tomaDe(lineaId, i);
   if (!toma || !Array.isArray(toma[lista]) || !toma[lista][fila]) return;
-  toma[lista][fila][campo] = campo === 'pct' ? numOrNull(el.value) : el.value.trim();
+
+  let val = el.value.trim();
+  if (campo === 'nombre' && val) {
+    const cat = catalogoDefectosCalidad();
+
+    // 1. Verificar si ya coincide exactamente con "CODIGO - Nombre" de un defecto existente
+    let item = cat.find(d => `${d.codigo} - ${d.nombre}`.toUpperCase() === val.toUpperCase());
+
+    // 2. Si no, verificar si el usuario escribió solo el código (ej. "GL", "b", "dte")
+    if (!item) {
+      item = cat.find(d => d.codigo.toUpperCase() === val.toUpperCase());
+    }
+
+    // 3. Si no, verificar si escribió solo el nombre del defecto (ej. "Torcido")
+    if (!item) {
+      item = cat.find(d => d.nombre.toUpperCase() === val.toUpperCase());
+    }
+
+    if (item) {
+      val = `${item.codigo} - ${item.nombre}`;
+      el.value = val;
+    } else {
+      // Si es un defecto nuevo que no existe en el catálogo, guardarlo dinámicamente
+      guardarDefectoCalidadSiEsNuevo(val, val);
+      refrescarDatalistDefectos();
+    }
+  }
+
+  toma[lista][fila][campo] = campo === 'pct' ? numOrNull(el.value) : val;
   // Si es un defecto de calidad de una toma ya enviada, actualizar el TOP en vivo.
   if (lista === 'defectos' && toma.enviada) sincronizarDefectosDesdeTomas();
   persistir();
@@ -541,6 +590,9 @@ export function quitarTomaCalidad(lineaId, indice) {
   derivarKpisCalidad(o);
   persistir();
   renderPlanillaCalidadInline();
+  if (typeof window.renderTodo === 'function') window.renderTodo();
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  emitirSincronizacionBloque('quitarTomaCalidad');
 }
 
 /**
@@ -557,9 +609,9 @@ function volcarDomToma(lineaId, i) {
   try {
     const get = sel => { try { return document.querySelector(sel); } catch { return null; } };
     // Campos simples de la toma.
-    ['global', 'parcial1', 'tono', 'm2', 'vacioHorno', 'segunda', 'rotura', 'hora'].forEach(sub => {
+    ['global', 'parcial1', 'tono', 'm2', 'vacioHorno', 'segunda', 'rotura', 'hora', 'producto', 'formato'].forEach(sub => {
       const el = get(`[data-cal-linea="${lineaId}"][data-cal-toma="${i}"][data-cal-sub="${sub}"]`);
-      if (el) toma[sub] = sub === 'hora' ? el.value : numOrNull(el.value);
+      if (el) toma[sub] = (sub === 'hora' || sub === 'producto' || sub === 'formato') ? el.value.trim() : numOrNull(el.value);
     });
     // Listas de defectos y roturas.
     ['defectos', 'roturas'].forEach(lista => {
@@ -567,7 +619,17 @@ function volcarDomToma(lineaId, i) {
       toma[lista].forEach((fila, j) => {
         ['nombre', 'pct', 'aclaracion'].forEach(campo => {
           const el = get(`[data-cal-linea="${lineaId}"][data-cal-toma="${i}"][data-cal-lista="${lista}"][data-cal-fila="${j}"][data-cal-campo="${campo}"]`);
-          if (el) fila[campo] = campo === 'pct' ? numOrNull(el.value) : el.value.trim();
+          if (el) {
+            let val = campo === 'pct' ? numOrNull(el.value) : el.value.trim();
+            if (campo === 'nombre' && typeof val === 'string' && val) {
+              const cat = catalogoDefectosCalidad();
+              let item = cat.find(d => `${d.codigo} - ${d.nombre}`.toUpperCase() === val.toUpperCase());
+              if (!item) item = cat.find(d => d.codigo.toUpperCase() === val.toUpperCase());
+              if (!item) item = cat.find(d => d.nombre.toUpperCase() === val.toUpperCase());
+              if (item) val = `${item.codigo} - ${item.nombre}`;
+            }
+            fila[campo] = val;
+          }
         });
       });
     });
@@ -629,19 +691,37 @@ export function quitarAccionCalidad(lineaId, i, fila) {
 
 /** Marca la toma como enviada (se refleja en Vista de Planta) y avisa. */
 export function enviarTomaCalidad(lineaId, i) {
+  volcarDomToma(lineaId, i);
   const toma = tomaDe(lineaId, i);
   if (!toma) return;
   if (!toma.hora) toma.hora = horaSistema();
   toma.enviada = true;
   const o = objDe(lineaId);
   derivarKpisCalidad(o);
-  // Volcar los defectos de las tomas enviadas al TOP de defectos / mapa.
+  // Si la toma enviada contiene cambio de producto o formato, sincronizar automáticamente a cabecera
+  const vig = productoVigenteCalidad(lineaId);
+  if (vig.producto || vig.formato) {
+    const sActual = sesion();
+    if (vig.producto) {
+      sActual.productoCalidad = vig.producto;
+      const el = document.getElementById('productoCabecera');
+      if (el && el.value.trim() !== vig.producto) el.value = vig.producto;
+    }
+    if (vig.formato) {
+      sActual.formatoCalidad = vig.formato;
+      const el = document.getElementById('formatoCabecera');
+      if (el && el.value.trim() !== vig.formato) el.value = vig.formato;
+    }
+  }
+  // Volcar los defectos de las tomas enviadas al TOP de defectos / mapa
   sincronizarDefectosDesdeTomas();
   persistir();
   renderPlanillaCalidadInline();
   // Refrescar dashboard/Vista de Planta para que el TOP de defectos y KPIs
   // reflejen lo recién enviado.
   if (typeof window.renderTodo === 'function') window.renderTodo();
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  emitirSincronizacionBloque('enviarTomaCalidad');
   mostrarAlertaKira(`Toma de las ${toma.hora} enviada. Se refleja en Vista de Planta.`, 'Calidad', 'exito');
 }
 
@@ -689,6 +769,9 @@ async function agregarFotos(lineaId, i, fileList) {
     }
     persistir();
     renderPlanillaCalidadInline();
+    if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+    if (typeof window.renderTodo === 'function') window.renderTodo();
+    emitirSincronizacionBloque('fotosCalidad');
   } catch (e) {
     mostrarAlertaKira('No se pudo procesar alguna imagen. Probá con otra.', 'Fotos de calidad', 'advertencia');
   }
@@ -713,6 +796,9 @@ export function quitarFotoCalidad(lineaId, i, fotoIdx) {
   toma.fotos.splice(fotoIdx, 1);
   persistir();
   renderPlanillaCalidadInline();
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  if (typeof window.renderTodo === 'function') window.renderTodo();
+  emitirSincronizacionBloque('fotosCalidad');
 }
 
 // ----------------------------------------------------------
@@ -830,3 +916,4 @@ window.subirFotoCalidad = subirFotoCalidad;
 window.soltarFotoCalidad = soltarFotoCalidad;
 window.quitarFotoCalidad = quitarFotoCalidad;
 window.ampliarFotoCalidad = ampliarFotoCalidad;
+window.refrescarDatalistDefectos = refrescarDatalistDefectos;

@@ -200,7 +200,7 @@ function hojaCalidad(workbook, nombreHoja, subtitulo, sesionesUsadas) {
       const tomas = tomasConDato(o);
       if (!tomas.length) return;
 
-      bandaSeccion(sheet, `Turno ${tn} · Operario: ${o.operarioCalidad || '-'}`, GRIS_OSC);
+      bandaSeccion(sheet, `Turno ${tn} · Operario: ${o.operarioCalidad || ses.operarioCalidad || '-'}`, GRIS_OSC);
 
       // Mediciones por toma.
       filaEncabezado(sheet, ['Hora', 'Global %', 'Parcial %', 'Tono', 'M²', 'Vacío horno', '2da %', 'Rotura %']);

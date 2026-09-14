@@ -15,10 +15,12 @@
 */
 
 import { valor, esc, hoyLocal } from '../nucleo/utilidades.js';
-import { db } from '../nucleo/almacenamiento.js';
+import { db, persistir } from '../nucleo/almacenamiento.js';
+import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import {
   sesion, lineasActivas, lineaPorId, nombreLinea,
-  asegurarObjetivosSesion, asegurarProduccionSesion, TURNO_MIN
+  asegurarObjetivosSesion, asegurarProduccionSesion, TURNO_MIN,
+  catalogoDefectosCalidad
 } from '../nucleo/estado.js';
 
 import { asegurarNotaTurno } from './notasTurno.js';
@@ -26,7 +28,7 @@ import { asegurarDefectosSesion, renderDefectos } from './gestionDefectos.js';
 import { renderAnalisis } from './graficosYAnalisis.js';
 import { todasParadas, todasDefectos } from './historicos.js';
 import { minutosDesdeInicioTurno } from '../nucleo/horno.js';
-import { areaDelRol } from '../nucleo/roles.js';
+import { areaDelRol, rolActual, usuarioActual } from '../nucleo/roles.js';
 import { renderPlanillaCalidadInline, renderTomasEnviadasVistaPlanta, ultimaTomaEnviada } from './cargaCalidad.js';
 import { renderProduccionInline, renderRespuestaDefectosVistaPlanta, renderFotosProduccion } from './cargaProduccion.js';
 
@@ -39,6 +41,128 @@ function equiposDelArea(equipos) {
   const area = areaDelRol();
   if (!area) return equipos;
   return equipos.filter(e => (e.area || 'produccion') === area);
+}
+
+// Franjas horarias por turno para gráficos de evolución
+export const HORAS_TURNO = {
+  'Mañana': ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'],
+  'Tarde':  ['14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'],
+  'Noche':  ['22:00', '23:00', '00:00', '01:00', '02:00', '03:00', '04:00', '05:00']
+};
+
+/**
+ * Obtiene la abreviatura o código estándar de un defecto para visualización compacta
+ * en gráficos y tarjetas (ej. 'Despunte' -> 'DTE', 'Borde saltado' -> 'BS').
+ */
+export function obtenerAbreviaturaDefecto(nombreOTexto) {
+  if (!nombreOTexto) return '';
+  const texto = String(nombreOTexto).trim();
+  if (texto.includes(' - ')) {
+    return texto.split(' - ')[0].trim().toUpperCase();
+  }
+  const catalogo = catalogoDefectosCalidad();
+  const lower = texto.toLowerCase();
+
+  const porCodigo = catalogo.find(d => d.codigo.toLowerCase() === lower);
+  if (porCodigo) return porCodigo.codigo;
+
+  const porNombreExacto = catalogo.find(d => d.nombre.toLowerCase() === lower);
+  if (porNombreExacto) return porNombreExacto.codigo;
+
+  const porNombreComienza = catalogo.find(d => d.nombre.toLowerCase().startsWith(lower));
+  if (porNombreComienza) return porNombreComienza.codigo;
+
+  const porNombreParcial = catalogo.find(d => {
+    const nom = d.nombre.toLowerCase();
+    if (nom.includes(lower) || lower.includes(nom)) return true;
+    const palabrasTexto = lower.split(/[\s·/,-]+/).filter(w => w.length > 2);
+    const matchPalabras = palabrasTexto.filter(w => nom.includes(w));
+    return matchPalabras.length >= 2;
+  });
+  if (porNombreParcial) return porNombreParcial.codigo;
+
+  if (lower.includes('despunte')) return 'DTE';
+  if (lower.includes('borde') && (lower.includes('saltado') || lower.includes('arrollado'))) return 'BS';
+  if (lower.includes('placa partida') || lower.includes('baldosa rota')) return 'BR';
+  if (lower.includes('punto negro')) return 'PTN';
+  if (lower.includes('grieta lateral')) return 'GL';
+  if (lower.includes('grieta interna')) return 'GI';
+  if (lower.includes('corazon') || lower.includes('corazón')) return 'CN';
+  if (lower.includes('camino de hormiga')) return 'CH';
+
+  if (texto.length <= 5 && !texto.includes(' ')) return texto.toUpperCase();
+  const siglas = texto.split(/[\s·/,-]+/).filter(w => w.length > 0 && !['de', 'la', 'el', 'en', 'por', 'o', 'y'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).slice(0, 3).join('');
+  return siglas || texto.slice(0, 3).toUpperCase();
+}
+
+/**
+ * Normaliza y formatea el nombre de un defecto para visualización estándar:
+ * "[ABREV] - [NOMBRE EN MAYÚSCULAS]" (ej. "G - GRUMO", "DTE - DESPUNTE", "BS - BORDE SALTADO")
+ * sin duplicar prefijos de código ("G - G -") ni sufijos de porcentaje pegados.
+ */
+export function formatearNombreDefecto(nombreOTexto) {
+  if (!nombreOTexto) return '';
+  const abrev = obtenerAbreviaturaDefecto(nombreOTexto);
+  let texto = String(nombreOTexto).trim();
+
+  // Si contiene ' - ', remover todos los prefijos repetidos de abreviaturas/códigos
+  while (texto.includes(' - ')) {
+    const partes = texto.split(' - ');
+    const primerSegmento = partes[0].trim().toUpperCase();
+    if (primerSegmento === abrev.toUpperCase() || primerSegmento.length <= 4) {
+      texto = partes.slice(1).join(' - ').trim();
+    } else {
+      break;
+    }
+  }
+
+  // Si empieza con la abreviatura seguida de espacio
+  if (abrev && texto.toUpperCase().startsWith(abrev.toUpperCase() + ' ')) {
+    texto = texto.slice(abrev.length).trim();
+  }
+
+  // Quitar posibles porcentajes pegados al final (ej. '(3.2%)' o '3.2%')
+  texto = texto.replace(/\s*\(\d+([.,]\d+)?%\)\s*$/, '').trim();
+  texto = texto.replace(/\s+\d+([.,]\d+)?%\s*$/, '').trim();
+
+  // Si el texto quedó solo con el código o vacío, buscar el nombre oficial en el catálogo
+  let nombreBase = texto;
+  if (!nombreBase || nombreBase.toUpperCase() === abrev.toUpperCase()) {
+    const catalogo = catalogoDefectosCalidad();
+    const defCat = catalogo.find(d => d.codigo.toUpperCase() === abrev.toUpperCase());
+    if (defCat) nombreBase = defCat.nombre;
+  }
+
+  const nombreLimpio = (nombreBase || texto).trim().toUpperCase();
+  return abrev ? `${abrev} - ${nombreLimpio}` : nombreLimpio;
+}
+
+/**
+ * Normaliza una colección de defectos (array de {nombre, porcentaje|pct} o mapa de {nombre: pct}) a mapa clave-valor.
+ * Las claves se estandarizan con formatearNombreDefecto() para consolidar nombres equivalentes.
+ */
+export function normalizarDefectosAMap(defs) {
+  const map = {};
+  if (!defs) return map;
+  if (Array.isArray(defs)) {
+    defs.forEach(d => {
+      const nom = String(d?.nombre || '').trim();
+      const pct = d?.porcentaje != null ? Number(d.porcentaje) : (d?.pct != null ? Number(d.pct) : null);
+      if (nom && pct !== null && !isNaN(pct)) {
+        const nomCanonica = formatearNombreDefecto(nom);
+        map[nomCanonica] = pct;
+      }
+    });
+  } else if (typeof defs === 'object') {
+    Object.entries(defs).forEach(([k, v]) => {
+      const num = Number(v);
+      if (!isNaN(num)) {
+        const nomCanonica = formatearNombreDefecto(k);
+        map[nomCanonica] = num;
+      }
+    });
+  }
+  return map;
 }
 
 // Variable de estado del módulo: define si el Análisis muestra el turno
@@ -123,81 +247,6 @@ export function metricas(regs = datosVista(), minutosPeriodo = TURNO_MIN) {
   return { parada, vacio, eventos, disponibilidad, productivos: Math.max(0, minutosPeriodo - parada), calidad: i.calidad, productividad: i.productividad };
 }
 
-/** Dibuja las tarjetas KPI del dashboard operativo principal (pestaña "Dashboard"). */
-export function renderKpis() {
-  const s = sesion();
-  asegurarObjetivosSesion(s);
-
-  const lineaFiltro = document.getElementById('lineaVista')?.value || 'TODAS';
-
-  let m, objVacio, objParadas;
-
-  // ------------------------------------------------------
-  // DATOS DE UNA LÍNEA ESPECÍFICA
-  // ------------------------------------------------------
-  if (lineaFiltro !== 'TODAS' && lineaPorId(lineaFiltro)) {
-    const paradasLinea = s.paradas.filter(x => x.linea === lineaFiltro);
-    m = metricas(paradasLinea);
-    const o = s.objetivos.porLinea[lineaFiltro];
-    objVacio = o.vacioMax || 0;
-    objParadas = o.paradasMax || 0;
-
-  // ------------------------------------------------------
-  // DATOS DE TODAS LAS LÍNEAS
-  // ------------------------------------------------------
-  } else {
-    m = metricas(s.paradas);
-    const objs = lineasActivas().map(l => s.objetivos.porLinea[l.id]);
-    objVacio = objs.reduce((a, o) => a + (o.vacioMax || 0), 0);
-    objParadas = objs.reduce((a, o) => a + (o.paradasMax || 0), 0);
-  }
-
-  // DISPONIBILIDAD
-  const dispVal = m.disponibilidad;
-  const dispColor = dispVal >= 90 ? 'text-emerald-700' : 'text-rose-700';
-  const dispTag = dispVal >= 90 ? '▲ ÓPTIMO' : '▼ BAJA';
-
-  // PARADAS vs objetivo.
-  const paradaOk = objParadas > 0 ? m.parada <= objParadas : m.parada <= 48;
-  const paradaColor = paradaOk ? 'text-emerald-700' : 'text-rose-700';
-  const paradaTag = objParadas > 0 ? `MÁX. ${objParadas}m` : 'PÉRDIDA';
-
-  // VACÍO vs objetivo.
-  const vacioOk = objVacio > 0 ? m.vacio <= objVacio : m.vacio <= 30;
-  const vacioColor = vacioOk ? 'text-sky-700' : 'text-rose-700';
-
-  // TARJETAS KPI (dashboard de producción). Calidad/rendimiento ya no van acá:
-  // la calidad vive en su propio panel y las métricas de producción se
-  // muestran en Vista de Planta.
-  const cards = [
-    ['Tiempo productivo', `${m.productivos} min`, 'text-emerald-700', 'OPERACIÓN'],
-    ['Minutos de parada', `${m.parada} min`, paradaColor, paradaTag],
-    ['Vacío de horno', `${m.vacio} min`, vacioColor, `MÁX. ${objVacio}m`],
-    ['Eventos', m.eventos, 'text-sky-700', 'REGISTROS'],
-    ['Disponibilidad', `${dispVal.toFixed(1)}%`, dispColor, dispTag],
-    ['Acciones', sesion().acciones.length, 'text-amber-700', 'CORRECTIVAS']
-  ];
-
-  const container = document.getElementById('kpis');
-  if (!container) return;
-
-  container.innerHTML = cards.map(c => {
-    const tagColor = c[3].includes('↓') || c[3].includes('Faltan')
-      ? 'text-rose-600'
-      : c[3].includes('↑') ? 'text-emerald-600' : 'text-slate-400';
-
-    return `
-      <div class="panel p-3 border-t-2 border-t-slate-400 bg-white">
-        <div class="flex justify-between gap-2">
-          <div class="text-[9px] uppercase font-black text-slate-500">${c[0]}</div>
-          <div class="text-[8px] font-black ${tagColor}">${c[3]}</div>
-        </div>
-        <div class="text-xl font-black ${c[2]}">${c[1]}</div>
-      </div>
-    `;
-  }).join('');
-}
-
 /** Dibuja el diagrama de proceso (bloques por máquina) del dashboard operativo. */
 export function renderMaquinas() {
   const linea = valor('lineaVista');
@@ -241,25 +290,16 @@ export function renderMaquinas() {
       `;
     }).join('');
 
-    const total = s.paradas.filter(x => x.linea === l).reduce((a, x) => a + x.minutos, 0);
-    const prod = s.productoPorLinea[l] || { producto: '', formato: '' };
-    // En el sinóptico se muestra solo el nombre de la línea. La descripción
-    // (ej. "Prensas 1 y 2") no se muestra: satura el encabezado y no aporta.
+    const paradasLinea = s.paradas.filter(x => x.linea === l);
+    const total = paradasLinea.reduce((a, x) => a + x.minutos, 0);
+
     return `
       <section class="scada-line mb-3">
-        <div class="line-caption flex flex-wrap items-center justify-between">
-          <div class="flex flex-wrap items-center gap-20">
-            <span>${esc(lineaConfig.nombre)}</span>
-            ${areaDelRol() === 'calidad' ? '' : `<div class="flex gap-2 no-print items-center">
-              <label class="text-[9px] font-bold text-slate-500">Producto
-                <input type="text" class="field mt-1 text-[11px]" style="padding:2px 6px;height:24px;width:180px;" value="${esc(prod.producto)}" placeholder="Ej: ARUSHA ARENA" onchange="guardarProduccionLinea('${l}','producto',this.value)">
-              </label>
-              <label class="text-[9px] font-bold text-slate-500">Formato
-                <input type="text" class="field mt-1 text-[11px]" style="padding:2px 6px;height:24px;width:110px;" value="${esc(prod.formato)}" placeholder="Ej: 45x45" onchange="guardarProduccionLinea('${l}','formato',this.value)">
-              </label>
-            </div>`}
+        <div class="line-caption flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-3">
+            <span class="font-black text-slate-800 text-sm tracking-wide">${esc(lineaConfig.nombre)}</span>
           </div>
-          <span>Tiempo detenido: ${total} min</span>
+          <span class="text-xs text-slate-500 font-semibold">Tiempo detenido: <b class="text-slate-800">${total} min</b></span>
         </div>
         <div class="process-track">${bloques}</div>
       </section>
@@ -273,25 +313,46 @@ export function renderAcciones() {
   const a = [...sesion().acciones]
     .filter(x => lineaFiltro === 'TODAS' || x.linea === lineaFiltro)
     .reverse();
-  document.getElementById('cantidadAcciones').textContent = a.length;
-  document.getElementById('accionesRecientes').innerHTML = a.length ? a.map(x => `
-    <div class="flex justify-between items-start border-b border-slate-200 pb-2 bg-white p-2 rounded shadow-xs">
-      <div>
-        <div class="flex justify-between font-bold text-slate-800 gap-2"><b>${esc(x.equipo)}</b><span class="text-slate-400 text-[11px]">${esc(x.hora)} · ${esc(nombreLinea(x.linea))}</span></div>
-        <div class="text-[13px] text-slate-600 mt-0.5">${esc(x.detalle)}</div>
-        <div class="text-[9px] text-slate-400 mt-1">Resp: ${esc(x.responsable || 'No indicado')}</div>
+  const badgeCant = document.getElementById('cantidadAcciones');
+  if (badgeCant) badgeCant.textContent = a.length;
+  const cont = document.getElementById('accionesRecientes');
+  if (!cont) return;
+
+  cont.innerHTML = a.length ? a.map(x => {
+    const fotos = Array.isArray(x.fotos) ? x.fotos : [];
+    return `
+    <div class="flex justify-between items-start border-b border-slate-200 pb-2.5 bg-white p-2.5 rounded shadow-xs">
+      <div class="flex-1 pr-2">
+        <div class="flex justify-between font-bold text-slate-800 gap-2">
+          <b>${esc(x.equipo)}</b>
+          <span class="text-slate-400 text-[11px]">${esc(x.hora)} · ${esc(nombreLinea(x.linea))}</span>
+        </div>
+        <div class="text-[13px] text-slate-600 mt-1 leading-snug">${esc(x.detalle)}</div>
+        <div class="text-[10px] text-slate-400 mt-1">Resp: <b class="text-slate-600">${esc(x.responsable || 'No indicado')}</b></div>
+        ${fotos.length ? `
+          <div class="mt-2 flex flex-wrap gap-1.5 items-center">
+            ${fotos.map(src => `
+              <div class="w-12 h-12 bg-slate-100 rounded border border-slate-300 overflow-hidden flex items-center justify-center cursor-zoom-in hover:opacity-85 transition shadow-2xs"
+                   onclick="window.ampliarFotoCalidad && window.ampliarFotoCalidad('${src.replace(/'/g, "\\'")}')"
+                   title="Click para ampliar comprobante">
+                <img src="${src}" class="max-w-full max-h-full object-contain" alt="Comprobante">
+              </div>
+            `).join('')}
+            <span class="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">📷 ${fotos.length} foto(s)</span>
+          </div>
+        ` : ''}
       </div>
-      <div class="flex gap-1 no-print">
-        <button class="text-sky-600 font-bold text-[10px] hover:underline" onclick="editarAccion('${x.id}')">Editar</button>
-        <button class="text-rose-500 font-bold text-[10px] hover:underline" onclick="eliminarAccionDirecta('${x.id}')">Eliminar</button>
+      <div class="flex gap-1.5 no-print shrink-0">
+        <button class="btn bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold text-[11px] px-2 py-0.5 rounded border border-sky-200" onclick="editarAccion('${x.id}')">Editar</button>
+        <button class="btn bg-rose-50 text-rose-600 hover:bg-rose-100 font-bold text-[11px] px-2 py-0.5 rounded border border-rose-200" onclick="eliminarAccionDirecta('${x.id}')">Eliminar</button>
       </div>
     </div>
-  `).join('') : '<p class="text-slate-500 italic text-xs">No hay acciones correctivas registradas en este turno.</p>';
+  `;
+  }).join('') : '<p class="text-slate-500 italic text-xs py-2">No hay acciones correctivas registradas en este turno.</p>';
 }
 
-/** Refresca el dashboard operativo completo (KPIs + máquinas + acciones + defectos). */
+/** Refresca el dashboard operativo (máquinas + acciones + defectos). */
 export function renderTodo() {
-  renderKpis();
   renderMaquinas();
   renderAcciones();
   renderDefectos();
@@ -467,7 +528,7 @@ export function calcularKpisPlanta(l) {
   // ---------- MÁQUINA MÁS CRÍTICA ----------
   const maquinaCritica = filasMaquinas[0];
   const nivelCritica = nivelPorValor(maquinaCritica?.mins || 0, UMBRAL_PARADA);
-  const valorCriticaColor = nivelCritica.key >= 2 ? 'text-rose-700' : (nivelCritica.key === 1 ? 'text-amber-600' : 'text-emerald-700');
+  const valorCriticaColor = nivelCritica.key >= 2 ? 'text-rose-600' : (nivelCritica.key === 1 ? 'text-amber-600' : 'text-emerald-600');
 
   const totalEquiposScope = lineasIter.reduce((a, lc) => a + equiposDelArea(lc.equipos.filter(e => e.activo !== false)).length, 0);
   const equiposConProblema = filasMaquinas.filter(f => {
@@ -479,7 +540,7 @@ export function calcularKpisPlanta(l) {
 
   // ---------- DEFECTO PREPONDERANTE ----------
   const nivelDefecto = nivelPorValor(defectoPreponderante?.porcentaje || 0, UMBRAL_DEFECTO);
-  const valorDefectoColor = nivelDefecto.key >= 2 ? 'text-rose-700' : (nivelDefecto.key === 1 ? 'text-amber-600' : 'text-emerald-700');
+  const valorDefectoColor = nivelDefecto.key >= 2 ? 'text-rose-600' : (nivelDefecto.key === 1 ? 'text-amber-600' : 'text-emerald-600');
 
   asegurarObjetivosSesion(s);
 
@@ -506,18 +567,18 @@ export function calcularKpisPlanta(l) {
   const horaCalidad = horasCalidad.length ? horasCalidad[horasCalidad.length - 1] : '--';
 
   const calidadValorColor = calidadReal >= calidadObjetivo
-    ? 'text-emerald-700'
-    : (calidadReal >= calidadObjetivo - 5 ? 'text-amber-600' : 'text-rose-700');
+    ? 'text-emerald-600'
+    : (calidadReal >= calidadObjetivo - 5 ? 'text-amber-600' : 'text-rose-600');
 
   const calidadParcialSube = calidadParcial > calidadReal;
   const calidadParcialBaja = calidadParcial < calidadReal;
   const calidadDireccion = calidadParcialSube
-    ? { color: 'text-emerald-600', stroke: '#059669', svg: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>' }
+    ? { color: 'text-emerald-600', stroke: '#34d399', svg: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>' }
     : calidadParcialBaja
-      ? { color: 'text-rose-600', stroke: '#dc2626', svg: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>' }
+      ? { color: 'text-rose-600', stroke: '#fb7185', svg: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>' }
       : { color: 'text-slate-400', stroke: '#94a3b8', svg: '<path d="M5 12h14"/>' };
 
-  const calidadDesvioClase = calidadDesvio >= 0 ? 'text-emerald-700' : 'text-rose-700';
+  const calidadDesvioClase = calidadDesvio >= 0 ? 'text-emerald-600' : 'text-rose-600';
   const calidadDesvioSigno = calidadDesvio > 0 ? '+' : '';
 
   // ---------- OBJETIVOS DE PRODUCCIÓN (paradas y vacío) ----------
@@ -531,11 +592,11 @@ export function calcularKpisPlanta(l) {
   // Parada y vacío se comparan contra su objetivo si está cargado (>0); si no,
   // se usan umbrales fijos por defecto.
   const paradaValorColor = objParadas > 0
-    ? (m.parada <= objParadas ? 'text-emerald-700' : (m.parada <= objParadas * 1.5 ? 'text-amber-600' : 'text-rose-700'))
-    : (m.parada <= 20 ? 'text-emerald-700' : (m.parada <= 60 ? 'text-amber-600' : 'text-rose-700'));
+    ? (m.parada <= objParadas ? 'text-emerald-600' : (m.parada <= objParadas * 1.5 ? 'text-amber-600' : 'text-rose-600'))
+    : (m.parada <= 20 ? 'text-emerald-600' : (m.parada <= 60 ? 'text-amber-600' : 'text-rose-600'));
   const vacioValorColor = objVacio > 0
-    ? (m.vacio <= objVacio ? 'text-emerald-700' : (m.vacio <= objVacio * 1.5 ? 'text-amber-600' : 'text-rose-700'))
-    : (m.vacio <= 10 ? 'text-emerald-700' : (m.vacio <= 30 ? 'text-amber-600' : 'text-rose-700'));
+    ? (m.vacio <= objVacio ? 'text-emerald-600' : (m.vacio <= objVacio * 1.5 ? 'text-amber-600' : 'text-rose-600'))
+    : (m.vacio <= 10 ? 'text-emerald-600' : (m.vacio <= 30 ? 'text-amber-600' : 'text-rose-600'));
 
   // ---------- MÉTRICAS PARA LAS TARJETAS QUEMADOS / CLASIFICADOS / TONO ----------
   // Se muestran los valores CARGADOS (última toma), con su hora, sin cálculos.
@@ -550,20 +611,28 @@ export function calcularKpisPlanta(l) {
     const o = s.objetivos?.porLinea?.[lc.id];
     if (!o) continue;
     // Quemado: última lectura con valor > 0 (por hora).
-    const quemadas = (o.lecturasQuemado || []).filter(t => t && t.hora && Number(t.real) > 0)
-      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
-    if (quemadoVal === null && quemadas.length) {
-      const u = quemadas[quemadas.length - 1];
-      quemadoVal = Number(u.real); quemadoHora = u.hora;
+    const lq = (o.lecturasQuemado || []).filter(x => Number(x?.quemados) > 0);
+    if (lq.length) {
+      const u = lq[lq.length - 1];
+      quemadoVal = Number(u.quemados);
+      quemadoHora = u.hora || '';
     }
-    // Calidad: última toma enviada (m², rotura, 2da, tono).
-    const ult = ultimaTomaEnviada(o);
-    if (clasifVal === null && ult) {
-      const t = ult.toma;
-      if (t.m2 != null) { clasifVal = Number(t.m2); clasifHora = t.hora || ''; }
-      if (t.rotura != null) roturaVal = Number(t.rotura);
-      if (t.segunda != null) segundaVal = Number(t.segunda);
-      if (t.tono != null) { tonoVal = Number(t.tono); tonoHora = t.hora || ''; }
+    // Clasificados / Rotura / Tono: de la última toma de calidad enviada
+    // (tomasCalidad) o de lecturasCalidad si no hay tomas.
+    const tomasEnv = (o.tomasCalidad || []).filter(t => t?.enviada === true);
+    const fuente = tomasEnv.length ? tomasEnv : (o.lecturasCalidad || []);
+    if (fuente.length) {
+      const u = fuente[fuente.length - 1];
+      if (clasifVal == null && (u.clasificados != null || u.m2 != null)) {
+        clasifVal = Number(u.clasificados ?? u.m2) || null;
+        clasifHora = u.hora || '';
+      }
+      if (roturaVal == null && u.rotura != null) roturaVal = Number(u.rotura);
+      if (segundaVal == null && u.segunda != null) segundaVal = Number(u.segunda);
+      if (tonoVal == null && u.tono) {
+        tonoVal = String(u.tono).trim();
+        tonoHora = u.hora || '';
+      }
     }
   }
 
@@ -571,14 +640,14 @@ export function calcularKpisPlanta(l) {
     s, paradasScope, defectosScope, m, lineasIter, filasMaquinas, filasMapaCalor,
     defectosOrdenados, defectoPreponderante, pctParada, pctVacio,
     maquinaCritica, nivelCritica, valorCriticaColor,
-    disponibilidadEquipos, equiposConProblema, totalEquiposScope,
+    totalEquiposScope, equiposConProblema, disponibilidadEquipos,
     nivelDefecto, valorDefectoColor,
-    calidadReal, calidadParcial, calidadObjetivo, calidadDesvio, horaCalidad,
+    calidadReal, calidadParcial, calidadDesvio, horaCalidad,
     calidadValorColor, calidadDireccion, calidadDesvioClase, calidadDesvioSigno,
     objParadas, objVacio,
     paradaValorColor, vacioValorColor,
     quemadoVal, quemadoHora, clasifVal, clasifHora, roturaVal, segundaVal, tonoVal, tonoHora,
-    esModoDia, minutosPeriodo, sesionesDia
+    minutosPeriodo, esModoDia, sesionesDia
   };
 }
 
@@ -619,7 +688,35 @@ export function renderVistaPlanta() {
     }
   }
 
-  // INYECCIÓN DE HTML DE LAS TARJETAS KPIs
+  // Producto y formato vigentes: el de la toma más reciente tiene prioridad sobre el anterior
+  const lineaActual = l !== 'TODAS' ? l : (lineasIter[0]?.id || '');
+  const vigCal = (lineaActual && window.productoVigenteCalidad) ? window.productoVigenteCalidad(lineaActual) : null;
+  const prodVigente = (vigCal?.producto || s.productoCalidad || '').trim();
+  const fmtVigente  = (vigCal?.formato  || s.formatoCalidad  || '').trim();
+
+  // Si hubo cambio de producto en las tomas, reflejarlo automáticamente en la sesión y en la barra superior
+  if (vigCal?.producto && vigCal.producto !== s.productoCalidad) {
+    s.productoCalidad = vigCal.producto;
+  }
+  if (vigCal?.formato && vigCal.formato !== s.formatoCalidad) {
+    s.formatoCalidad = vigCal.formato;
+  }
+  const prodInput = document.getElementById('productoCabecera');
+  if (prodInput && prodVigente && prodInput.value.trim() !== prodVigente) {
+    prodInput.value = prodVigente;
+  }
+  const fmtInput = document.getElementById('formatoCabecera');
+  if (fmtInput && fmtVigente && fmtInput.value.trim() !== fmtVigente) {
+    fmtInput.value = fmtVigente;
+  }
+
+  // Reflejar en la cabecera de los gráficos de calidad
+  const subtituloProd = prodVigente ? `${prodVigente}${fmtVigente ? ' · ' + fmtVigente : ''}` : '';
+  ['subtituloProductoCalGlobal','subtituloProductoCalParcial'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = subtituloProd;
+  });
+
+  // INYECCIÓN DE HTML DE LAS TARJETAS KPIs (Paleta pastel suave para iconos y valores)
   document.getElementById('vpKpis').innerHTML = `
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
       <div>
@@ -627,7 +724,7 @@ export function renderVistaPlanta() {
         <div class="text-2xl font-black ${paradaValorColor} mt-1">${m.parada} <span class="text-sm font-bold text-slate-400">min</span></div>
         <div class="text-[11px] text-slate-400 mt-1">% del turno: ${pctParada}%</div>
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
     </div>
 
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
@@ -636,7 +733,7 @@ export function renderVistaPlanta() {
         <div class="text-2xl font-black ${vacioValorColor} mt-1">${m.vacio} <span class="text-sm font-bold text-slate-400">min</span></div>
         <div class="text-[11px] text-slate-400 mt-1">% del turno: ${pctVacio}%</div>
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M12 2c1 3-2 4-2 7a4 4 0 0 0 8 0c0-1-.5-2-1-3 1 1 2 3 2 5a7 7 0 0 1-14 0c0-4 3-5 4-9 0 0 2 1 3 0z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M12 2c1 3-2 4-2 7a4 4 0 0 0 8 0c0-1-.5-2-1-3 1 1 2 3 2 5a7 7 0 0 1-14 0c0-4 3-5 4-9 0 0 2 1 3 0z"/></svg>
     </div>
 
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
@@ -645,7 +742,7 @@ export function renderVistaPlanta() {
         <div class="text-base font-black ${valorCriticaColor} mt-1">${esc(maquinaCritica?.equipo || 'Sin datos')}</div>
         <div class="text-[16px] font-black ${valorCriticaColor} mt-1">${maquinaCritica?.mins || 0} min · ${nivelCritica.label}</div>
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M12 2 2 20h20L12 2z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17" r="0.6" fill="#dc2626" stroke="none"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M12 2 2 20h20L12 2z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17" r="0.6" fill="#f87171" stroke="none"/></svg>
     </div>
 
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
@@ -654,7 +751,7 @@ export function renderVistaPlanta() {
         <div class="text-base font-black ${valorDefectoColor} mt-1">${esc(defectoPreponderante?.nombre || 'Sin defectos')}</div>
         <div class="text-[16px] font-black ${valorDefectoColor} mt-0.5">${defectoPreponderante ? defectoPreponderante.porcentaje + '%' : '0%'}${defectoPreponderante ? ` · ${nivelDefecto.label}` : ''}</div>
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     </div>
 
     <!-- QUEMADOS: m² quemados (última toma cargada por producción) + hora. -->
@@ -664,7 +761,7 @@ export function renderVistaPlanta() {
         <div class="text-2xl font-black text-slate-800 mt-1">${quemadoVal != null ? quemadoVal.toLocaleString('es-AR') + ' <span class="text-sm font-bold text-slate-400">m²</span>' : '<span class="text-slate-300">—</span>'}</div>
         ${quemadoVal != null && quemadoHora ? `<div class="text-[11px] text-slate-400 mt-1">${esc(quemadoHora)} hs</div>` : ''}
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M8 2c1 3-2 4-2 7a4 4 0 0 0 8 0c0-1-.5-2-1-3 1 1 3 3 3 6a6 6 0 0 1-12 0c0-4 4-5 4-10z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28"><path d="M8 2c1 3-2 4-2 7a4 4 0 0 0 8 0c0-1-.5-2-1-3 1 1 3 3 3 6a6 6 0 0 1-12 0c0-4 4-5 4-10z"/></svg>
     </div>
 
     <!-- METROS CLASIFICADOS: m² de la última toma de calidad + Rotura % secundario. -->
@@ -672,11 +769,11 @@ export function renderVistaPlanta() {
       <div>
         <div class="text-[13px] uppercase font-black text-slate-500">Metros clasificados</div>
         <div class="text-2xl font-black text-slate-800 mt-1">${clasifVal != null ? clasifVal.toLocaleString('es-AR') + ' <span class="text-sm font-bold text-slate-400">m²</span>' : '<span class="text-slate-300">—</span>'}</div>
-        ${segundaVal != null ? `<div class="text-[12px] mt-1 text-amber-700 font-bold">2da: ${segundaVal}%</div>` : ''}
-        ${roturaVal != null ? `<div class="text-[12px] text-orange-700 font-bold">Rotura: ${roturaVal}%</div>` : ''}
+        ${segundaVal != null ? `<div class="text-[12px] mt-1 text-amber-600 font-bold">2da: ${segundaVal}%</div>` : ''}
+        ${roturaVal != null ? `<div class="text-[12px] text-orange-600 font-bold">Rotura: ${roturaVal}%</div>` : ''}
         ${clasifVal != null && clasifHora ? `<div class="text-[11px] text-slate-400 mt-0.5">${esc(clasifHora)} hs</div>` : ''}
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     </div>
 
     <div class="panel p-3 min-h-[110px] border-t-2 border-t-slate-300 bg-white flex justify-between items-start">
@@ -686,7 +783,7 @@ export function renderVistaPlanta() {
         <div class="text-[14px] text-slate-500 mt-1 flex items-center gap-1">Parcial: <b class="${calidadDireccion.color}">${calidadParcial.toFixed(1)}%</b><svg viewBox="0 0 24 24" fill="none" stroke="${calidadDireccion.stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">${calidadDireccion.svg}</svg></div>
         <div class="text-[13px] mt-1 ${calidadDesvioClase}">Desvío: <b>${calidadDesvioSigno}${calidadDesvio.toFixed(1)}%</b><span class="text-slate-400"> · ${horaCalidad} hs</span></div>
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M20 6 9 17l-5-5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><path d="M20 6 9 17l-5-5"/></svg>
     </div>
 
     <!-- TONO: valor de tono de la última toma de calidad + hora. -->
@@ -696,7 +793,7 @@ export function renderVistaPlanta() {
         <div class="text-2xl font-black text-slate-800 mt-1">${tonoVal != null ? tonoVal : '<span class="text-slate-300">—</span>'}</div>
         ${tonoVal != null && tonoHora ? `<div class="text-[11px] text-slate-400 mt-1">${esc(tonoHora)} hs</div>` : ''}
       </div>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 2a10 10 0 0 0 0 20 2.5 2.5 0 0 0 2-4 2.5 2.5 0 0 1 2-4h1a5 5 0 0 0 5-5 10 10 0 0 0-10-7z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg>
     </div>
   `;
 
@@ -748,7 +845,7 @@ export function renderVistaPlanta() {
         <td class="text-center font-black text-slate-500">${i + 1}</td>
         <td class="text-center text-slate-600">${esc(nombreLinea(x.linea))}</td>
         <td class="text-center text-sky-700 font-bold">${esc(x.hora || '—')}</td>
-        <td><b>${esc(x.nombre)}</b></td>
+        <td><b>${esc(formatearNombreDefecto(x.nombre) || x.nombre)}</b></td>
         <td class="text-center"><span class="badge ${nivel.badge}">${x.porcentaje}%</span></td>
         <td>${esc(x.accion || '—')}</td>
         <td class="text-center"><span class="badge ${nivel.badge}">${nivel.label}</span></td>
@@ -795,51 +892,58 @@ export function renderVistaPlanta() {
   const frasesAuto = [];
   if (maquinaCritica) {
     // Desglose por motivo de ESTA máquina específica (filasMapaCalor ya
-    // viene agrupado por equipo+motivo — ver el fix del mapa de calor).
-    const motivosDeLaCritica = filasMapaCalor
-      .filter(f => f.equipo === maquinaCritica.equipo && f.lineaNombre === maquinaCritica.lineaNombre)
-      .sort((a, b) => b.mins - a.mins);
-
-    if (motivosDeLaCritica.length > 1) {
-      const detalle = motivosDeLaCritica.map(f => `${esc(f.motivo)} ${f.mins} min`).join(', ');
-      frasesAuto.push(`Turno con afectación destacada en <b>${esc(maquinaCritica.equipo)}</b> por ${detalle}, llevando un acumulado de ${maquinaCritica.mins} min.`);
-    } else {
-      frasesAuto.push(`Turno con afectación destacada en <b>${esc(maquinaCritica.equipo)}</b> por "${esc(maquinaCritica.motivo)}" (${maquinaCritica.mins} min).`);
-    }
+    // agrupó y sumó las paradas de esa máquina para el turno/día actual).
+    const motivosEstaMaq = {};
+    paradasScope.filter(p => p.equipo === maquinaCritica.equipo).forEach(p => {
+      motivosEstaMaq[p.motivo] = (motivosEstaMaq[p.motivo] || 0) + p.minutos;
+    });
+    const motivosDesc = Object.entries(motivosEstaMaq)
+      .sort((a, b) => b[1] - a[1])
+      .map(e => `${esc(e[0])} (${e[1]} min)`)
+      .join(', ');
+    frasesAuto.push(`<span><b>Máquina más crítica:</b> ${esc(maquinaCritica.equipo)} con ${maquinaCritica.mins} min de parada total${maquinaCritica.vacio > 0 ? ` y ${maquinaCritica.vacio} min de vacío` : ''}${motivosDesc ? ` · <span class="text-slate-500">Causas: ${motivosDesc}</span>` : ''}.</span>`);
   } else {
-    frasesAuto.push('Sin paradas relevantes registradas en este turno.');
+    frasesAuto.push('<span class="text-slate-500">No se registran paradas de equipos en el período.</span>');
   }
-  // Paradas vs objetivo.
-  if (objParadas > 0) {
-    frasesAuto.push(m.parada <= objParadas
-      ? `Tiempo de paradas dentro del objetivo (${m.parada} min de ${objParadas} min máx.).`
-      : `Tiempo de paradas por encima del objetivo (${m.parada} min vs. ${objParadas} min máx.).`);
-  }
-  // Vacío vs objetivo.
-  if (m.vacio > objVacioTotal && objVacioTotal > 0) {
-    frasesAuto.push(`Vacío de horno por encima del objetivo (${m.vacio} min vs. ${objVacioTotal} min).`);
-  }
-  // Defecto más relevante (última toma).
-  if (defectoPrincipal) {
-    frasesAuto.push(`Defecto de calidad más relevante: <b>${esc(defectoPrincipal.nombre)}</b> (${defectoPrincipal.porcentaje}%).`);
-  }
-  // Producción del turno (lo cargado).
-  if (quemadoVal != null) frasesAuto.push(`m² quemados: <b>${quemadoVal.toLocaleString('es-AR')}</b>${quemadoHora ? ` (${esc(quemadoHora)} hs)` : ''}.`);
-  if (clasifVal != null) frasesAuto.push(`m² clasificados: <b>${clasifVal.toLocaleString('es-AR')}</b>${roturaVal != null ? ` · rotura ${roturaVal}%` : ''}.`);
-  document.getElementById('vpComentarioAuto').innerHTML = frasesAuto.join(' ');
 
-  // Reflejo de las observaciones cargadas por cada rol (solo lectura).
-  const obsProd = (s.notaTurno || '').trim();
+  if (defectoPrincipal) {
+    frasesAuto.push(`<span><b>Defecto principal:</b> ${esc(formatearNombreDefecto(defectoPrincipal.nombre) || defectoPrincipal.nombre)} con ${defectoPrincipal.porcentaje}% de piezas defectuosas${defectoPrincipal.accion ? ` · <b>Acción:</b> ${esc(defectoPrincipal.accion)}` : ''}.</span>`);
+  }
+
+  if (objVacioTotal > 0) {
+    const vacioTotal = m.vacio;
+    const cumplimientoVacio = vacioTotal <= objVacioTotal;
+    frasesAuto.push(`<span>Vacío de horno: <b>${vacioTotal} min</b> (máx ${objVacioTotal} min) · <span class="${cumplimientoVacio ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}">${cumplimientoVacio ? 'Cumple objetivo' : 'Supera el límite permitido'}</span>.</span>`);
+  }
+
+  document.getElementById('vpComentarioAuto').innerHTML = frasesAuto.join('<span class="text-slate-300 font-bold mx-2 hidden sm:inline">|</span>');
+
+  // Observaciones de producción: mostrar solo las del operario de turno actual
+  // y reflejar la badge con el nombre del operario logueado.
+  const obsProd = (s.observacionesTurno || '').trim();
   const elObsProd = document.getElementById('vpObsProduccion');
   if (elObsProd) elObsProd.innerHTML = obsProd
-    ? `<div class="font-black text-slate-500 uppercase text-[10px] mb-0.5">Observaciones de producción</div><p class="text-slate-700 whitespace-pre-line">${esc(obsProd)}</p>`
-    : '';
+    ? esc(obsProd)
+    : '<span class="text-slate-400 italic">Sin observaciones de producción.</span>';
+
+  const opProdBadge = document.getElementById('vpOperarioProduccionBadge');
+  if (opProdBadge) {
+    const usuarioAct = usuarioActual();
+    if (usuarioAct && usuarioAct.rol === 'produccion' && usuarioAct.nombre) {
+      opProdBadge.textContent = usuarioAct.nombre;
+      opProdBadge.classList.remove('hidden');
+    } else {
+      opProdBadge.textContent = '';
+      opProdBadge.classList.add('hidden');
+    }
+  }
+
   // Observaciones de calidad: por línea (la monitoreada / primera del scope).
   const obsCal = (lineasIter.map(lc => (s.objetivos?.porLinea?.[lc.id]?.observacionesCalidad || '').trim()).find(Boolean) || '');
   const elObsCal = document.getElementById('vpObsCalidad');
   if (elObsCal) elObsCal.innerHTML = obsCal
-    ? `<div class="font-black text-sky-600 uppercase text-[10px] mb-0.5">Observaciones de calidad</div><p class="text-slate-700 whitespace-pre-line">${esc(obsCal)}</p>`
-    : '';
+    ? esc(obsCal)
+    : '<span class="text-slate-400 italic">Sin observaciones de calidad.</span>';
 
   // Renderizar gráficos de calidad (modo turno u día de 24 h)
   renderizarGraficosCalidad(l, lineasIter, s, { esModoDia, sesionesDia });
@@ -847,10 +951,197 @@ export function renderVistaPlanta() {
   // Renderizar gráfico de evolución de defectos
   renderizarGraficoEvolucionDefectos(l, defectosScope, s);
 
-  // Reflejar en Vista de Planta lo propio de cada rol (contenedores ocultos
-  // para el otro rol por data-cap).
-  if (areaDelRol() === 'calidad') renderTomasEnviadasVistaPlanta();
-  else renderRespuestaDefectosVistaPlanta();
+  // Reflejar en Vista de Planta según el rol:
+  // En MODO SUPERVISOR no se muestran las tomas de calidad ni las respuestas a defectos de producción en Vista de Planta
+  const rActual = rolActual();
+  const elTomasCal = document.getElementById('vpCalidadTomas');
+  const elRespProd = document.getElementById('vpProduccionAcciones');
+
+  if (rActual === 'supervisor') {
+    if (elTomasCal) elTomasCal.innerHTML = '';
+    if (elRespProd) elRespProd.innerHTML = '';
+  } else if (rActual === 'calidad') {
+    renderTomasEnviadasVistaPlanta();
+    if (elRespProd) elRespProd.innerHTML = '';
+  } else if (rActual === 'produccion') {
+    if (elTomasCal) elTomasCal.innerHTML = '';
+    renderRespuestaDefectosVistaPlanta();
+  } else {
+    // Administrador u otros
+    renderTomasEnviadasVistaPlanta();
+    renderRespuestaDefectosVistaPlanta();
+  }
+
+  // Evidencias fotográficas de calidad: visible para todos los logins en Vista de Planta
+  renderFotosCalidadVistaPlanta(l, lineasIter, s);
+
+  // Evidencias y acciones correctivas de producción en Vista de Planta
+  renderAccionesProduccionVistaPlanta(l, s);
+}
+
+/**
+ * Renderiza las fotos de evidencias de calidad en la Vista de Planta general.
+ * Muestra ÚNICAMENTE las fotos de la última toma cargada (fotos del momento
+ * que respaldan los datos vigentes de calidad).
+ */
+export function renderFotosCalidadVistaPlanta(lineaSeleccionada, lineasIter, s) {
+  const cont = document.getElementById('vpFotosCalidadContainer');
+  const countBadge = document.getElementById('vpFotosCalidadCount');
+  if (!cont) return;
+
+  // Determinar líneas a consultar: si es 'TODAS', iterar todas las activas; si no, la línea seleccionada
+  const lineasBuscar = lineaSeleccionada !== 'TODAS'
+    ? lineasIter.filter(li => li.id === lineaSeleccionada)
+    : lineasIter;
+
+  // Recolectar ÚNICAMENTE las fotos de la toma más reciente con fotos (fotos del momento)
+  const fotosEnviadas = [];
+  lineasBuscar.forEach(linea => {
+    const o = s.objetivos?.porLinea?.[linea.id];
+    if (!o || !Array.isArray(o.tomasCalidad)) return;
+
+    // Buscar las tomas con fotos ordenadas de más reciente a más antigua
+    const tomasConFotos = o.tomasCalidad
+      .map((t, idx) => ({ t, idx }))
+      .filter(x => Array.isArray(x.t.fotos) && x.t.fotos.length > 0)
+      .sort((a, b) => (b.t.hora || '').localeCompare(a.t.hora || '') || (b.idx - a.idx));
+
+    // Tomar EXCLUSIVAMENTE la toma más reciente con fotos (las fotos viejas se reemplazan)
+    const ultimaToma = tomasConFotos[0];
+    if (!ultimaToma) return;
+
+    const { t, idx } = ultimaToma;
+    const defStr = (t.defectos || [])
+      .filter(d => (d.nombre || '').trim())
+      .map(d => `${d.nombre}${d.pct != null ? ` (${d.pct}%)` : ''}`)
+      .join(' · ');
+
+    // Las fotos de esta toma vigente
+    const fotosDeToma = [...(t.fotos || [])].reverse();
+    fotosDeToma.forEach(src => {
+      if (!src) return;
+      fotosEnviadas.push({
+        src,
+        tomaIdx: idx + 1,
+        hora: t.hora || '—',
+        enviada: t.enviada === true,
+        lineaNombre: linea.nombre,
+        defectos: defStr || 'Sin defectos informados'
+      });
+    });
+  });
+
+  if (countBadge) {
+    if (fotosEnviadas.length > 0) {
+      countBadge.textContent = `${fotosEnviadas.length} foto${fotosEnviadas.length === 1 ? '' : 's'} · Toma ${fotosEnviadas[0].tomaIdx}`;
+    } else {
+      countBadge.textContent = '0 fotos';
+    }
+  }
+
+  if (!fotosEnviadas.length) {
+    cont.innerHTML = `
+      <div class="col-span-full py-6 text-center text-xs text-slate-400 italic bg-slate-50/70 rounded-lg border border-dashed border-slate-200">
+        No se registran fotos en la última toma de calidad de este turno.
+      </div>`;
+    return;
+  }
+
+  cont.innerHTML = fotosEnviadas.map((f, idx) => `
+    <div class="border ${f.enviada ? 'border-sky-200 hover:border-sky-400' : 'border-amber-300 hover:border-amber-400 bg-amber-50/20'} rounded-lg bg-white overflow-hidden shadow-sm flex flex-col transition">
+      <div class="${f.enviada ? 'bg-sky-50 border-sky-100' : 'bg-amber-50 border-amber-200'} px-3 py-1.5 border-b flex items-center justify-between text-xs font-bold text-slate-700">
+        <span class="flex items-center gap-1.5 text-sky-800">
+          <span class="w-5 h-5 rounded-full ${f.enviada ? 'bg-sky-600' : 'bg-amber-600'} text-white flex items-center justify-center text-[10px] font-black">${idx + 1}</span>
+          <span>${esc(f.lineaNombre)} · Toma ${f.tomaIdx}</span>
+          ${!f.enviada ? '<span class="text-[9px] bg-amber-200 text-amber-900 px-1 rounded font-bold">Borrador</span>' : ''}
+        </span>
+        <span class="text-slate-500 font-mono text-[11px]">${esc(f.hora)} hs</span>
+      </div>
+      <div class="w-full h-48 sm:h-52 bg-slate-900/5 overflow-hidden flex items-center justify-center cursor-zoom-in relative group"
+        onclick="window.ampliarFotoCalidad && window.ampliarFotoCalidad('${f.src.replace(/'/g, "\\'")}')" title="Click para ampliar imagen">
+        <img src="${f.src}" class="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-200" alt="Foto defecto ${idx + 1}">
+        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
+          <span class="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white text-[11px] px-2 py-1 rounded shadow">🔍 Click para ampliar</span>
+        </div>
+      </div>
+      <div class="p-2 bg-white text-[11px] text-slate-600 border-t border-slate-100 truncate" title="${esc(f.defectos)}">
+        <strong class="text-rose-700 font-semibold">Defectos:</strong> ${esc(f.defectos)}
+      </div>
+    </div>
+  `).join('');
+}
+
+/**
+ * Renderiza las acciones correctivas con sus fotos de respaldo en Vista de Planta general.
+ */
+export function renderAccionesProduccionVistaPlanta(lineaSeleccionada, s) {
+  const panel = document.getElementById('vpAccionesProduccionPanel');
+  const cont = document.getElementById('vpAccionesProduccionContainer');
+  const countBadge = document.getElementById('vpAccionesProduccionCount');
+  if (!cont) return;
+
+  const acciones = (s.acciones || [])
+    .filter(x => lineaSeleccionada === 'TODAS' || x.linea === lineaSeleccionada)
+    .slice()
+    .reverse();
+
+  if (countBadge) {
+    countBadge.textContent = `${acciones.length} ${acciones.length === 1 ? 'acción' : 'acciones'}`;
+  }
+
+  if (!acciones.length) {
+    cont.innerHTML = `
+      <div class="col-span-full py-6 text-center text-xs text-slate-400 italic bg-slate-50/70 rounded-lg border border-dashed border-slate-200">
+        No se registran acciones correctivas en este turno.
+      </div>`;
+    return;
+  }
+
+  cont.innerHTML = acciones.map(x => {
+    const fotos = Array.isArray(x.fotos) ? x.fotos : [];
+    return `
+      <div class="border border-emerald-200 rounded-lg bg-white overflow-hidden shadow-sm flex flex-col justify-between transition hover:border-emerald-400">
+        <div class="bg-emerald-50 px-3 py-1.5 border-b border-emerald-100 flex items-center justify-between text-xs font-bold text-slate-700">
+          <span class="flex items-center gap-1.5 text-emerald-900">
+            <span class="badge bg-emerald-600 text-white text-[10px] font-black">${esc(nombreLinea(x.linea))}</span>
+            <span class="font-extrabold">${esc(x.equipo)}</span>
+          </span>
+          <span class="text-slate-500 font-mono text-[11px]">${esc(x.hora)} hs</span>
+        </div>
+
+        <div class="p-3 flex-1 flex flex-col justify-between">
+          <div>
+            <p class="text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded border border-slate-100 mb-2 whitespace-pre-line">${esc(x.detalle)}</p>
+            <div class="text-[11px] text-slate-400 mb-2">
+              Responsable: <b class="text-slate-600 font-semibold">${esc(x.responsable || s.operarioProduccion || 'No indicado')}</b>
+            </div>
+          </div>
+
+          ${fotos.length ? `
+            <div class="border-t border-slate-100 pt-2 mt-2">
+              <div class="text-[10px] font-bold text-emerald-800 uppercase mb-1.5 flex items-center gap-1">
+                <span>📷 Comprobantes adjuntos (${fotos.length}):</span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                ${fotos.map((src, fIdx) => `
+                  <div class="h-24 bg-slate-900/5 rounded border border-slate-200 overflow-hidden flex items-center justify-center cursor-zoom-in group relative"
+                       onclick="window.ampliarFotoCalidad && window.ampliarFotoCalidad('${src.replace(/'/g, "\\'")}')"
+                       title="Click para ampliar comprobante">
+                    <img src="${src}" class="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-200" alt="Comprobante ${fIdx + 1}">
+                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
+                      <span class="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded shadow">🔍 Ampliar</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : `
+            <div class="text-[10px] text-slate-400 italic border-t border-slate-100 pt-1.5 mt-2">Sin comprobantes fotográficos adjuntos</div>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 /**
@@ -862,24 +1153,32 @@ function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s, opciones = 
     const { esModoDia = false, sesionesDia = [] } = opciones;
 
     // Construye el objeto "objetivos" que alimenta el gráfico para una línea.
-    // - Modo turno: usa las lecturas de calidad de la sesión actual.
-    // - Modo día: concatena las lecturas de los 3 turnos en una sola serie de
-    //   24 h, ordenadas por la jornada administrativa (05:00 → 05:00), para
-    //   ver la evolución continua del día.
+    // - Modo turno: usa las tomas de calidad de la sesión actual (o lecturas previas).
+    // - Modo día: concatena las tomas/lecturas de los 3 turnos en una sola serie de
+    //   24 h, ordenadas por la jornada administrativa (05:00 → 05:00).
     const objetivosParaLinea = (lc) => {
       if (!esModoDia) return s.objetivos?.porLinea?.[lc.id];
 
       const objBase = s.objetivos?.porLinea?.[lc.id] || {};
-      // Ordenar por turno (Mañana→Tarde→Noche) y, dentro de cada turno, por
-      // los minutos transcurridos desde su inicio.
       const ordTurno = { 'Mañana': 0, 'Tarde': 1, 'Noche': 2 };
       const conTurno = [];
       sesionesDia.forEach(({ turno: turnoSes, sesion: ses }) => {
         const o = ses.objetivos?.porLinea?.[lc.id];
-        (o?.lecturasCalidad || []).forEach(lec => {
+        if (!o) return;
+        const tomas = (o.tomasCalidad || []).filter(t => t && (t.global != null || t.parcial1 != null));
+        const raw = tomas.length
+          ? tomas.map((t, idx) => ({ hora: (t.hora || '').trim() || `Toma ${idx + 1}`, global: t.global, parcial: t.parcial1 }))
+          : (o.lecturasCalidad || []).filter(l => l && (l.global != null || l.parcial != null));
+        raw.forEach(lec => {
           if (!lec || !lec.hora) return;
           if (lec.global === null && lec.parcial === null) return;
-          conTurno.push({ hora: lec.hora, global: lec.global, parcial: lec.parcial, _t: ordTurno[turnoSes] ?? 9, _m: minutosDesdeInicioTurno(lec.hora, turnoSes) ?? 0 });
+          conTurno.push({
+            hora: lec.hora,
+            global: lec.global,
+            parcial: lec.parcial,
+            _t: ordTurno[turnoSes] ?? 9,
+            _m: minutosDesdeInicioTurno(lec.hora, turnoSes) ?? 0
+          });
         });
       });
       conTurno.sort((a, b) => (a._t - b._t) || (a._m - b._m));
@@ -889,12 +1188,17 @@ function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s, opciones = 
 
     const lineasConDatos = lineasIter
       .map(lc => ({ linea: lc, objetivos: objetivosParaLinea(lc) }))
-      .filter(x => x.objetivos && Array.isArray(x.objetivos.lecturasCalidad) && x.objetivos.lecturasCalidad.length > 0);
+      .filter(x => {
+        if (!x.objetivos) return false;
+        const o = x.objetivos;
+        const tieneTomas = Array.isArray(o.tomasCalidad) && o.tomasCalidad.some(t => t && (t.global != null || t.parcial1 != null));
+        const tieneLecturas = Array.isArray(o.lecturasCalidad) && o.lecturasCalidad.some(l => l && (l.global != null || l.parcial != null));
+        return tieneTomas || tieneLecturas;
+      });
 
-    // Si la línea seleccionada es TODAS, agregar datos de todas las líneas
+    // Si la línea seleccionada es TODAS, agregar datos de todas las líneas con datos
     // Si no, mostrar solo la línea seleccionada
     let lineasAMostrar = lineasConDatos;
-    
     if (lineaSeleccionada !== 'TODAS') {
       lineasAMostrar = lineasConDatos.filter(x => x.linea.id === lineaSeleccionada);
     }
@@ -911,34 +1215,95 @@ function renderizarGraficosCalidad(lineaSeleccionada, lineasIter, s, opciones = 
           window[chartKey] = null;
         }
         
-        // Limpiar canvas
-        canvas.style.display = 'none';
-        setTimeout(() => { canvas.style.display = 'block'; }, 10);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.font = '13px sans-serif';
+          ctx.fillStyle = '#94a3b8';
+          ctx.textAlign = 'center';
+          const tipo = canvasId === 'chartCalidadGlobal' ? 'global' : 'parcial';
+          ctx.fillText(`Sin lecturas de calidad ${tipo} registradas`, canvas.width / 2, canvas.height / 2);
+        }
       });
       return;
     }
 
-    // Gráfico de calidad global (en modo día es la evolución de 24 h).
-    renderizarGraficoCalidad('chartCalidadGlobal', 'global', lineasAMostrar, s);
+    // Calcular escala compartida basada en Calidad Parcial para que ambos gráficos
+    // tengan la misma escala del eje Y de 5 en 5, usando la escala de parcial
+    let escalaCompartida = null;
+    if (!esModoDia) {
+      const valoresParcial = [];
+      const valoresGlobal = [];
+      const objetivos = [];
+      lineasAMostrar.forEach(item => {
+        const { objetivos: objs } = item;
+        const tomas = objs?.tomasCalidad || [];
+        tomas.forEach(t => {
+          const vp = (t?.parcial1 != null && !isNaN(Number(t.parcial1))) ? Number(t.parcial1) : ((t?.parcial != null && !isNaN(Number(t.parcial))) ? Number(t.parcial) : null);
+          if (vp !== null) valoresParcial.push(vp);
+          const vg = (t?.global != null && !isNaN(Number(t.global))) ? Number(t.global) : null;
+          if (vg !== null) valoresGlobal.push(vg);
+        });
+        const legacy = objs?.lecturasCalidad || [];
+        legacy.forEach(l => {
+          const vp = (l?.parcial != null && !isNaN(Number(l.parcial))) ? Number(l.parcial) : null;
+          if (vp !== null) valoresParcial.push(vp);
+          const vg = (l?.global != null && !isNaN(Number(l.global))) ? Number(l.global) : null;
+          if (vg !== null) valoresGlobal.push(vg);
+        });
+        if (Number(objs?.calidad) > 0) objetivos.push(Number(objs?.calidad));
+      });
+
+      const baseMuestreo = valoresParcial.length > 0 ? valoresParcial : valoresGlobal;
+      if (baseMuestreo.length > 0) {
+        let valMin = Math.min(...baseMuestreo);
+        let valMax = Math.max(...baseMuestreo);
+        if (valoresGlobal.length > 0) {
+          valMin = Math.min(valMin, ...valoresGlobal);
+          valMax = Math.max(valMax, ...valoresGlobal);
+        }
+        if (objetivos.length > 0) {
+          valMin = Math.min(valMin, ...objetivos);
+          valMax = Math.max(valMax, ...objetivos);
+        } else {
+          valMin = Math.min(valMin, 90);
+          valMax = Math.max(valMax, 90);
+        }
+
+        const margen = 2.0;
+        let yMin = Math.max(0, Math.round(valMin - margen));
+        let yMax = Math.min(100, Math.round(valMax + margen));
+        if (valMin < yMin) yMin = Math.floor(valMin);
+        if (valMax > yMax) yMax = Math.ceil(valMax);
+        if (yMax - yMin < 4) {
+          const centro = (yMax + yMin) / 2;
+          yMin = Math.max(0, Math.floor(centro - 2));
+          yMax = Math.min(100, Math.ceil(centro + 2));
+        }
+        escalaCompartida = { yMin, yMax };
+      }
+    }
+
+    // Gráfico de calidad global (usa la escala de parcial de 5 en 5 si existe)
+    renderizarGraficoCalidad('chartCalidadGlobal', 'global', lineasAMostrar, s, escalaCompartida);
 
     // El gráfico de calidad parcial solo se dibuja en modo turno (en modo día
     // el panel está oculto y el global ocupa todo el ancho).
     if (!esModoDia) {
-      renderizarGraficoCalidad('chartCalidadParcial', 'parcial', lineasAMostrar, s);
+      renderizarGraficoCalidad('chartCalidadParcial', 'parcial', lineasAMostrar, s, escalaCompartida);
     }
   } catch (error) {
     console.error('Error al renderizar gráficos de calidad:', error);
   }
 }
 
-
-
 /**
  * Renderiza un gráfico específico de calidad (global o parcial).
- * Los segmentos cambian de color dinámicamente: verde cuando están sobre el objetivo, rojo cuando están debajo.
- * Se interpolan puntos adicionales donde la línea cruza el objetivo para un cambio de color preciso.
+ * Utiliza escala de categorías robusta nativa de Chart.js 4.
+ * Puntos y segmentos: verde cuando están sobre el objetivo, rojo cuando están debajo.
+ * Incluye línea horizontal de objetivo y etiquetas legibles en cada punto.
  */
-function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
+function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s, escalaCompartida = null) {
   try {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -951,225 +1316,203 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
     }
 
     // Destruir gráfico anterior si existe
+    if (window.Chart && typeof window.Chart.getChart === 'function') {
+      const existing = window.Chart.getChart(canvas);
+      if (existing) existing.destroy();
+    }
     const chartKey = canvasId + 'Chart';
     if (window[chartKey]) {
-      window[chartKey].destroy();
+      try { window[chartKey].destroy(); } catch {}
       window[chartKey] = null;
     }
 
-    // Extraer datos de todas las líneas y calcular el máximo y mínimo valor medido
-    const datasets = [];
-    let maxValorMedido = 0;
-    let minValorMedido = 100;
-    let horasOriginales = [];
-    let indicesOriginales = []; // Guardar los índices de los puntos originales
-    
+    // Extraer lecturas válidas por cada línea
+    const datosPorLinea = [];
+    const todasHoras = [];
+
     lineasConDatos.forEach((item, idx) => {
       const { linea, objetivos } = item;
-      const lecturas = (objetivos?.lecturasCalidad || []).filter(lectura => {
-        const valorLectura = tipoCalidad === 'global' ? lectura?.global : lectura?.parcial;
-        return lectura?.hora && valorLectura !== null && valorLectura !== undefined;
-      });
-      const objetivo = objetivos?.calidad || 0;
+      const tomas = (objetivos?.tomasCalidad || []).map((t, i) => ({
+        hora: (t?.hora || '').trim() || `Toma ${i + 1}`,
+        global: (t?.global != null && !isNaN(Number(t.global))) ? Number(t.global) : null,
+        parcial: (t?.parcial1 != null && !isNaN(Number(t.parcial1))) ? Number(t.parcial1) : ((t?.parcial != null && !isNaN(Number(t.parcial))) ? Number(t.parcial) : null)
+      }));
 
-      if (!Array.isArray(lecturas) || lecturas.length === 0) return;
+      const legacy = (objetivos?.lecturasCalidad || []).map((l, i) => ({
+        hora: (l?.hora || '').trim() || `Toma ${i + 1}`,
+        global: (l?.global != null && !isNaN(Number(l.global))) ? Number(l.global) : null,
+        parcial: (l?.parcial != null && !isNaN(Number(l.parcial))) ? Number(l.parcial) : null
+      }));
 
-      // Extraer horas y valores de calidad originales
-      const valoresOriginales = lecturas.map(l => {
-        if (tipoCalidad === 'global') {
-          return l?.global !== null && l?.global !== undefined ? l.global : null;
-        } else {
-          return l?.parcial !== null && l?.parcial !== undefined ? l.parcial : null;
-        }
-      });
+      const tieneTomas = tomas.some(t => t.global !== null || t.parcial !== null);
+      const fuente = tieneTomas ? tomas : legacy;
 
-      if (datasets.length === 0) {
-        horasOriginales = lecturas.map(l => l?.hora || '');
-        console.log(`[${tipoCalidad}] Lecturas:`, lecturas);
-        console.log(`[${tipoCalidad}] Horas:`, horasOriginales);
-        console.log(`[${tipoCalidad}] Valores originales:`, valoresOriginales);
+      const lecturas = fuente.map(item => ({
+        hora: item.hora,
+        valor: tipoCalidad === 'global' ? item.global : item.parcial
+      })).filter(l => l.valor !== null);
+
+      const objetivo = Number(objetivos?.calidad) || 90;
+
+      if (lecturas.length > 0) {
+        lecturas.forEach(l => {
+          if (!todasHoras.includes(l.hora)) todasHoras.push(l.hora);
+        });
+        datosPorLinea.push({
+          linea,
+          objetivo,
+          lecturas,
+          idx
+        });
       }
-
-      // Interpolar puntos adicionales EXACTAMENTE donde la línea cruza el
-      // objetivo. Así cada segmento queda completamente de un lado del
-      // objetivo y su color (verde sobre / rojo bajo) es preciso, sin
-      // "tapar" los puntos originales medidos.
-      // Construir puntos {x, y}. A cada punto ORIGINAL se le asigna un índice
-      // X entero secuencial (0, 1, 2, ...), de modo que las horas queden
-      // SIEMPRE equiespaciadas en el eje, sin importar cuántos cruces haya.
-      // Los puntos interpolados de cruce reciben un X fraccional entre los
-      // dos originales que los rodean, para caer en su posición correcta.
-      const puntos = [];             // [{x, y}]
-      const indicesOriginalesTemp = []; // posiciones (en 'puntos') que son originales
-
-      for (let i = 0; i < valoresOriginales.length; i++) {
-        const valorActual = valoresOriginales[i];
-
-        if (i > 0) {
-          const valorPrevio = valoresOriginales[i - 1];
-          if (valorPrevio !== null && valorActual !== null) {
-            const cruzaHaciaAbajo = valorPrevio > objetivo && valorActual < objetivo;
-            const cruzaHaciaArriba = valorPrevio < objetivo && valorActual > objetivo;
-            if (cruzaHaciaAbajo || cruzaHaciaArriba) {
-              // Fracción del tramo (0..1) donde el valor iguala al objetivo.
-              const t = (objetivo - valorPrevio) / (valorActual - valorPrevio);
-              if (t > 0 && t < 1) {
-                // X del cruce: entre el índice del punto previo (i-1) y el actual (i).
-                puntos.push({ x: (i - 1) + t, y: objetivo });
-              }
-            }
-          }
-        }
-
-        puntos.push({ x: i, y: valorActual });
-        indicesOriginalesTemp.push(puntos.length - 1);
-      }
-
-      if (idx === 0) {
-        indicesOriginales = indicesOriginalesTemp;
-      }
-
-      // Calcular el máximo y mínimo valor medido
-      const valoresValidos = puntos.map(p => p.y).filter(v => v !== null);
-      if (valoresValidos.length > 0) {
-        maxValorMedido = Math.max(maxValorMedido, ...valoresValidos);
-        minValorMedido = Math.min(minValorMedido, ...valoresValidos);
-      }
-
-      // Configuración del dataset con colores dinámicos por segmento
-      datasets.push({
-        label: linea?.nombre || `Línea ${idx + 1}`,
-        data: puntos,
-        borderColor: 'rgb(52, 211, 153)', // Color por defecto (verde)
-        backgroundColor: 'rgb(52, 211, 153)',
-        borderWidth: 3,
-        fill: false,
-        tension: 0, // Sin curvatura para que los colores coincidan exactamente
-        pointRadius: function(context) {
-          // Ocultar puntos interpolados, mostrar solo los originales
-          const indice = context.dataIndex;
-          return indicesOriginales.includes(indice) ? 5 : 0;
-        },
-        pointBackgroundColor: function(context) {
-          const valor = context.parsed.y;
-          if (valor === null || valor === undefined) return 'rgb(203, 213, 225)';
-          return valor >= objetivo ? 'rgb(52, 211, 153)' : 'rgb(253, 164, 175)';
-        },
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointHoverRadius: function(context) {
-          const indice = context.dataIndex;
-          return indicesOriginales.includes(indice) ? 7 : 0;
-        },
-        pointHoverBackgroundColor: function(context) {
-          const indice = context.dataIndex;
-          if (!indicesOriginales.includes(indice)) return 'transparent';
-          const valor = context.parsed.y;
-          if (valor === null || valor === undefined) return 'rgb(203, 213, 225)';
-          return valor >= objetivos?.calidad ? 'rgb(52, 211, 153)' : 'rgb(253, 164, 175)';
-        },
-        datalabels: {
-          display: false // Desactivar completamente las etiquetas de datos en los puntos
-        },
-        // Esta es la clave: segment permite colorear cada segmento de línea individualmente
-        segment: {
-          borderColor: function(context) {
-            const valor0 = context.p0.parsed.y;
-            const valor1 = context.p1.parsed.y;
-            
-            if (valor0 === null || valor1 === null) return 'rgb(203, 213, 225)';
-            
-            // Ahora que tenemos puntos interpolados en los cruces, 
-            // cada segmento está completamente de un lado del objetivo
-            const promedioSegmento = (valor0 + valor1) / 2;
-            return promedioSegmento >= objetivo ? 'rgb(52, 211, 153)' : 'rgb(253, 164, 175)';
-          }
-        }
-      });
     });
 
-    if (datasets.length === 0) return;
-
-    // Con eje X lineal, cada hora original vive en un índice entero (0,1,2,...).
-    // Este mapa índice→hora se usa para los ticks del eje.
-    const horaPorIndice = {};
-    horasOriginales.forEach((h, i) => { horaPorIndice[i] = h || ''; });
-    const totalOriginales = horasOriginales.length;
-
-    // Calcular rango dinámico del eje Y con margen del 15% hacia arriba y hacia abajo
-    const margenMin = minValorMedido * 0.15;
-    const margenMax = maxValorMedido * 0.15;
-    
-    let yMin = Math.max(0, Math.floor(minValorMedido - margenMin));
-    let yMax = Math.min(100, Math.ceil(maxValorMedido + margenMax));
-    
-    // Si no hay datos válidos, usar rango por defecto
-    if (minValorMedido === 100 || maxValorMedido === 0) {
-      yMin = 0;
-      yMax = 100;
+    if (datosPorLinea.length === 0 || todasHoras.length === 0) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '13px sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Sin lecturas de calidad ${tipoCalidad} registradas`, canvas.width / 2, canvas.height / 2);
+      }
+      return;
     }
 
-    // Obtener objetivos para la línea de referencia
-    const objetivosLineas = lineasConDatos.map(item => item.objetivos?.calidad || 0);
+    // Determinar valores para dimensionar eje Y con margen estrecho y dinámico (±2.0%)
+    const todosValores = [];
+    const objetivosLineas = [];
 
-    // ----------------------------------------------------------
-    // QUIEBRES DE PRODUCTO / FORMATO / CICLO
-    // ----------------------------------------------------------
-    // Cada quiebre tiene una hora. Los mapeamos a una posición X (índice
-    // fraccional dentro del eje de horas de las lecturas de calidad) para
-    // poder dibujar una línea vertical exactamente donde ocurre el cambio.
-    const turnoActual = s?.turno || 'Mañana';
-
-    // Minutos de turno de cada hora original (para interpolar la X del quiebre).
-    const minutosPorIndiceOriginal = horasOriginales.map(h => minutosDesdeInicioTurno(h, turnoActual));
-
-    /** Convierte un minuto de turno a una posición X (índice lineal 0..n-1). */
-    const minutoAPosicionX = (minutoTurno) => {
-      if (minutoTurno === null || minutoTurno === undefined) return null;
-      // Buscar entre qué dos horas originales cae el quiebre.
-      for (let k = 0; k < minutosPorIndiceOriginal.length - 1; k++) {
-        const mA = minutosPorIndiceOriginal[k];
-        const mB = minutosPorIndiceOriginal[k + 1];
-        if (mA === null || mB === null) continue;
-        if (minutoTurno >= mA && minutoTurno <= mB && mB > mA) {
-          const frac = (minutoTurno - mA) / (mB - mA);
-          return k + frac; // índice fraccional entre k y k+1
+    datosPorLinea.forEach(dl => {
+      dl.lecturas.forEach(l => {
+        if (l.valor !== null && l.valor !== undefined && !isNaN(l.valor)) {
+          todosValores.push(Number(l.valor));
         }
-      }
-      // Fuera de rango: pegar al primer o último punto.
-      const primero = minutosPorIndiceOriginal[0];
-      const ultimo = minutosPorIndiceOriginal[minutosPorIndiceOriginal.length - 1];
-      if (primero !== null && minutoTurno <= primero) return 0;
-      if (ultimo !== null && minutoTurno >= ultimo) return minutosPorIndiceOriginal.length - 1;
-      return null;
-    };
+      });
+      if (dl.objetivo > 0) objetivosLineas.push(Number(dl.objetivo));
+    });
 
-    // Reunir quiebres de todas las líneas mostradas, con su posición X.
-    // Se diferencian dos tipos:
-    //   - 'producto': cambio de producto (etiqueta = nombre del producto).
-    //   - 'ciclo'   : cambio de velocidad del horno (etiqueta = "Ciclo Nmin").
+    let yMin, yMax;
+    if (escalaCompartida && escalaCompartida.yMin != null && escalaCompartida.yMax != null) {
+      // Usar la escala compartida calculada a partir de Calidad Parcial (ambos gráficos iguales)
+      yMin = escalaCompartida.yMin;
+      yMax = escalaCompartida.yMax;
+      // Resguardo: si este gráfico tiene alguna lectura que sobrepase la escala, expandir
+      if (todosValores.length > 0) {
+        const minP = Math.min(...todosValores);
+        const maxP = Math.max(...todosValores);
+        if (minP < yMin) yMin = Math.max(0, Math.floor(minP - 2.0));
+        if (maxP > yMax) yMax = Math.min(100, Math.ceil(maxP + 2.0));
+      }
+    } else {
+      const valoresMuestreo = [...todosValores];
+      if (objetivosLineas.length > 0) {
+        valoresMuestreo.push(...objetivosLineas);
+      } else {
+        valoresMuestreo.push(90);
+      }
+
+      const valorMinimo = Math.min(...valoresMuestreo);
+      const valorMaximo = Math.max(...valoresMuestreo);
+      const margenMuestreo = 2.0;
+
+      yMin = Math.max(0, Math.round(valorMinimo - margenMuestreo));
+      yMax = Math.min(100, Math.round(valorMaximo + margenMuestreo));
+      if (valorMinimo < yMin) yMin = Math.floor(valorMinimo);
+      if (valorMaximo > yMax) yMax = Math.ceil(valorMaximo);
+
+      // Si el rango es menor a 4 (ej: lecturas constantes o una sola toma), expandir alrededor del centro
+      if (yMax - yMin < 4) {
+        const centro = (yMax + yMin) / 2;
+        yMin = Math.max(0, Math.floor(centro - 2));
+        yMax = Math.min(100, Math.ceil(centro + 2));
+      }
+    }
+
+    // Paleta de colores pasteles armónicos para múltiples líneas
+    const paletaLineas = [
+      { border: 'rgb(52, 211, 153)', bg: 'rgba(52, 211, 153, 0.15)' }, // Menta pastel
+      { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.15)' }, // Celeste pastel
+      { border: 'rgb(167, 139, 250)', bg: 'rgba(167, 139, 250, 0.15)' }, // Lavanda pastel
+      { border: 'rgb(251, 146, 60)', bg: 'rgba(251, 146, 60, 0.15)' }  // Melocotón pastel
+    ];
+
+    // Construir datasets
+    const datasets = datosPorLinea.map((dl, dIdx) => {
+      const objetivo = dl.objetivo;
+      const data = todasHoras.map(h => {
+        const item = dl.lecturas.find(l => l.hora === h);
+        return item ? item.valor : null;
+      });
+
+      const colorBase = paletaLineas[dIdx % paletaLineas.length];
+
+      return {
+        label: dl.linea?.nombre || `Línea ${dIdx + 1}`,
+        data: data,
+        borderColor: function(context) {
+          const chart = context.chart;
+          const { ctx, chartArea, scales } = chart;
+          if (!chartArea || !scales || !scales.y) {
+            return 'rgb(52, 211, 153)';
+          }
+          const yPixel = scales.y.getPixelForValue(objetivo);
+          const top = chartArea.top;
+          const bottom = chartArea.bottom;
+          if (bottom <= top || isNaN(yPixel)) return 'rgb(52, 211, 153)';
+
+          if (yPixel <= top) return 'rgb(251, 113, 133)';   // Todo está por debajo del objetivo (rosa pastel)
+          if (yPixel >= bottom) return 'rgb(52, 211, 153)'; // Todo está por encima del objetivo (verde menta)
+
+          const stop = Math.max(0, Math.min(1, (yPixel - top) / (bottom - top)));
+          const gradient = ctx.createLinearGradient(0, top, 0, bottom);
+          gradient.addColorStop(0, 'rgb(52, 211, 153)');     // Verde arriba del objetivo
+          gradient.addColorStop(stop, 'rgb(52, 211, 153)');  // Verde hasta el corte del objetivo
+          gradient.addColorStop(stop, 'rgb(251, 113, 133)'); // Rosa pastel desde el corte del objetivo
+          gradient.addColorStop(1, 'rgb(251, 113, 133)');    // Rosa pastel por debajo del objetivo
+          return gradient;
+        },
+        backgroundColor: 'rgba(52, 211, 153, 0.1)',
+        borderWidth:3.5,
+        tension: 0,
+        fill: false,
+        spanGaps: true,
+        pointRadius: 6,
+        pointHoverRadius: 8,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2,
+        pointBackgroundColor: function(context) {
+          const val = context.parsed?.y ?? (typeof context.raw === 'object' ? context.raw?.y : context.raw);
+          if (val == null) return 'rgb(203, 213, 225)';
+          return val >= objetivo ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)';
+        },
+        pointHoverBackgroundColor: function(context) {
+          const val = context.parsed?.y ?? (typeof context.raw === 'object' ? context.raw?.y : context.raw);
+          if (val == null) return 'rgb(203, 213, 225)';
+          return val >= objetivo ? 'rgb(52, 211, 153)' : 'rgb(251, 113, 133)';
+        }
+      };
+    });
+
+    // Quiebres de producto / formato / ciclo
     const quiebresGrafico = [];
     lineasConDatos.forEach(item => {
       const quiebres = item.objetivos?.quiebresProducto || [];
       quiebres.forEach(q => {
-        const minuto = (q.minutoTurno !== undefined && q.minutoTurno !== null)
-          ? q.minutoTurno
-          : minutosDesdeInicioTurno(q.hora, turnoActual);
-        const posX = minutoAPosicionX(minuto);
-        if (posX === null) return;
+        if (!q.hora) return;
         const tipo = q.tipo === 'ciclo' ? 'ciclo' : 'producto';
         const etiqueta = tipo === 'ciclo'
           ? `Ciclo ${q.cicloNuevo || ''}min`
           : (q.productoNuevo || 'Cambio');
-        quiebresGrafico.push({ posX, hora: q.hora || '', etiqueta, tipo });
+        quiebresGrafico.push({ hora: q.hora, etiqueta, tipo });
       });
     });
 
-    // Crear gráfico
+    // Crear instancia de Chart.js
     window[chartKey] = new Chart(canvas, {
       type: 'line',
       data: {
-        // Con eje X lineal los datos son {x, y}; no se usan labels.
+        labels: todasHoras,
         datasets: datasets
       },
       options: {
@@ -1182,32 +1525,43 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
         },
         plugins: {
           datalabels: {
-            display: false // Desactivar etiquetas de datos en todos los puntos
+            display: false
+          },
+          etiquetasBarras: {
+            display: false
           },
           tooltip: {
             enabled: true,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: 'rgba(15, 23, 42, 0.9)',
             titleColor: '#fff',
             bodyColor: '#fff',
-            borderColor: '#475569',
+            borderColor: '#334155',
             borderWidth: 1,
             padding: 10,
             displayColors: true,
-            filter: function(tooltipItem) {
-              // Solo mostrar tooltip en puntos originales (no interpolados)
-              return indicesOriginales.includes(tooltipItem.dataIndex);
-            },
             callbacks: {
               label: function(context) {
-                const valor = context.parsed.y;
-                const objetivo = objetivosLineas[context.datasetIndex] || 0;
-                const estado = valor >= objetivo ? '✓ Sobre objetivo' : '✗ Bajo objetivo';
-                return `${context.dataset.label}: ${valor.toFixed(2)}% ${estado}`;
+                const valor = context.parsed?.y ?? context.raw;
+                if (valor == null) return '';
+                const dl = datosPorLinea[context.datasetIndex];
+                const obj = dl?.objetivo || 90;
+                const estado = valor >= obj ? '✓ Sobre objetivo' : '✗ Bajo objetivo';
+                return `${context.dataset.label}: ${Number(valor).toFixed(2)}% (${estado})`;
               }
             }
           },
           legend: {
-            display: false // Ocultar la leyenda completamente
+            display: datasets.length > 1,
+            position: 'top',
+            labels: { boxWidth: 12, font: { size: 11 } }
+          }
+        },
+        layout: {
+          padding: {
+            top: 14,
+            bottom: 4,
+            left: 4,
+            right: 14
           }
         },
         scales: {
@@ -1215,49 +1569,32 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             min: yMin,
             max: yMax,
             ticks: {
-              callback: (value) => value + '%',
+              stepSize: 5,
+              maxTicksLimit: 7,
+              callback: (value) => {
+                return Math.round(Number(value)) + '%';
+              },
               font: { size: 11 }
             },
             grid: {
-              color: 'rgba(148, 163, 184, 0.1)'
+              color: 'rgba(148, 163, 184, 0.15)'
             }
           },
           x: {
-            // Eje lineal: las horas originales viven en índices enteros
-            // equiespaciados (0,1,2,...). Se agrega un margen de 0,4 índices
-            // a cada lado para que el primer y el último punto no queden
-            // pegados a las paredes del gráfico.
-            type: 'linear',
-            // Separación mínima de la primera toma respecto del eje Y.
-            // Bajá este número hacia 0 para pegarla más; subilo (ej. -0.15)
-            // para separarla un poco más.
-            min: -0.02,
-            max: (totalOriginales - 1) + 0.4,
-            // Forzar un tick EXACTO en cada índice de toma (0,1,2,...), sin
-            // importar el 'min'. Así la hora de la primera toma nunca se pierde.
-            afterBuildTicks: (axis) => {
-              axis.ticks = [];
-              for (let i = 0; i < totalOriginales; i++) {
-                axis.ticks.push({ value: i });
-              }
-            },
-            ticks: {
-              font: { size: 11 },
-              autoSkip: false,
-              maxRotation: 0,
-              minRotation: 0,
-              // Mostrar la hora de la toma que corresponde a cada índice.
-              callback: (value) => horaPorIndice[Math.round(value)] || ''
-            },
             grid: {
               color: 'rgba(148, 163, 184, 0.1)'
+            },
+            ticks: {
+              font: { size: 11, weight: 'bold' },
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0
             }
           }
         }
       },
       plugins: [{
-        // Dibuja el valor de calidad (%) SOLO sobre los puntos originales
-        // (las tomas). Los puntos interpolados de cruce no llevan etiqueta.
+        // Dibuja el valor de calidad (%) encima de cada punto con contorno blanco legible
         id: 'etiquetasCalidad',
         afterDatasetsDraw(chart) {
           const ctx = chart.ctx;
@@ -1265,19 +1602,17 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             const meta = chart.getDatasetMeta(dsIdx);
             if (meta.hidden) return;
             meta.data.forEach((punto, idx) => {
-              // Solo puntos originales (no interpolados).
-              if (!indicesOriginales.includes(idx)) return;
-              const valor = dataset.data[idx]?.y;
+              const valor = dataset.data[idx];
               if (valor === null || valor === undefined || isNaN(valor)) return;
 
               ctx.save();
-              ctx.font = 'bold 10px Segoe UI, Arial, sans-serif';
+              ctx.font = 'bold 12px Segoe UI, Arial, sans-serif';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'bottom';
-              // Contorno blanco para que el número se lea sobre la línea.
+              ctx.lineJoin = 'round';
               ctx.lineWidth = 3;
-              ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-              ctx.fillStyle = '#1e293b';
+              ctx.strokeStyle = '#ffffff';
+              ctx.fillStyle = '#0f172a';
               const texto = `${Number(valor).toFixed(1)}%`;
               ctx.strokeText(texto, punto.x, punto.y - 8);
               ctx.fillText(texto, punto.x, punto.y - 8);
@@ -1286,26 +1621,23 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
           });
         }
       }, {
+        // Línea horizontal del objetivo
         id: 'lineaObjetivo',
         afterDatasetsDraw(chart) {
           const ctx = chart.ctx;
           const yScale = chart.scales.y;
           const xScale = chart.scales.x;
-          
           if (!yScale || !xScale) return;
 
-          // Dibujar UNA línea punteada por cada valor de objetivo DISTINTO.
-          // (Deduplicado para no repetir la etiqueta cuando varias líneas
-          // comparten el mismo objetivo.)
           const objetivosUnicos = [...new Set(objetivosLineas.filter(o => o > 0))];
-
           objetivosUnicos.forEach((objetivo) => {
             const yPixel = yScale.getPixelForValue(objetivo);
+            if (yPixel == null || isNaN(yPixel)) return;
             const xStart = xScale.left;
             const xEnd = xScale.right;
 
             ctx.save();
-            ctx.strokeStyle = 'rgb(165, 230, 255)'; // Celeste pastel
+            ctx.strokeStyle = 'rgb(125, 211, 252)'; // Celeste pastel suave
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
             ctx.beginPath();
@@ -1314,9 +1646,8 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             ctx.stroke();
             ctx.restore();
 
-            // Etiqueta "Objetivo: X%" en el extremo derecho de la línea.
             ctx.save();
-            ctx.fillStyle = 'rgb(100, 116, 139)';
+            ctx.fillStyle = 'rgb(71, 85, 105)';
             ctx.font = 'bold 11px sans-serif';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'bottom';
@@ -1325,9 +1656,7 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
           });
         }
       }, {
-        // Marcas verticales de "quiebre": cada cambio de producto/formato/ciclo
-        // durante el turno. KIRA distingue así que cada producto cerámico es
-        // distinto y no debe compararse como una curva continua.
+        // Marcas verticales de "quiebre": cambios de producto / formato / ciclo
         id: 'quiebresProducto',
         afterDatasetsDraw(chart) {
           if (!quiebresGrafico.length) return;
@@ -1337,13 +1666,13 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
           if (!xScale || !yScale) return;
 
           quiebresGrafico.forEach(q => {
-            const xPixel = xScale.getPixelForValue(q.posX);
-            if (xPixel === null || isNaN(xPixel)) return;
+            const idx = chart.data.labels.indexOf(q.hora);
+            if (idx === -1) return;
+            const xPixel = xScale.getPixelForValue(idx);
+            if (xPixel == null || isNaN(xPixel)) return;
+
             const yTop = yScale.top;
             const yBottom = yScale.bottom;
-
-            // Color según el tipo de quiebre: ámbar para cambio de producto,
-            // índigo para cambio de ciclo (velocidad del horno).
             const esCiclo = q.tipo === 'ciclo';
             const colorLinea = esCiclo ? 'rgba(79, 70, 229, 0.85)' : 'rgba(217, 119, 6, 0.85)';
             const colorTexto = esCiclo ? 'rgba(67, 56, 202, 0.95)' : 'rgba(180, 83, 9, 0.95)';
@@ -1359,7 +1688,6 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Etiqueta rotada con el detalle del quiebre.
             ctx.translate(xPixel, yTop + 4);
             ctx.rotate(-Math.PI / 2);
             ctx.fillStyle = colorTexto;
@@ -1377,6 +1705,21 @@ function renderizarGraficoCalidad(canvasId, tipoCalidad, lineasConDatos, s) {
     console.error(`Error al renderizar gráfico ${canvasId}:`, error);
   }
 }
+
+// ==========================================================
+// EXPOSICIÓN A window
+// ----------------------------------------------------------
+// cambiarAreaMonitoreada: llamada desde onchange="..." en index.html.
+// ==========================================================
+window.cambiarAreaMonitoreada = cambiarAreaMonitoreada;
+window.cambiarPeriodoVista = cambiarPeriodoVista;
+// Expuesto para que cargaCalidad.js refresque el dashboard tras enviar una
+// toma (sin crear dependencia circular de import).
+window.renderTodo = renderTodo;
+window.renderVistaPlanta = renderVistaPlanta;
+window.renderFotosCalidadVistaPlanta = renderFotosCalidadVistaPlanta;
+window.renderAccionesProduccionVistaPlanta = renderAccionesProduccionVistaPlanta;
+
 
 /**
  * Renderiza el gráfico de evolución de los 4 principales defectos hora a hora.
@@ -1412,13 +1755,13 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
     
     if (lineaSeleccionada === 'TODAS') {
       // Buscar en todas las líneas hasta encontrar una con lecturas
-      const lineas = s.lineas || [];
-      for (const linea of lineas) {
-        const lecturasLinea = s.objetivos?.porLinea?.[linea.id]?.lecturasDefectos || [];
-        if (lecturasLinea.length > 0) {
-          lecturasDefectos = lecturasLinea;
-          lineaUsada = linea.id;
-          console.log('Usando lecturas de defectos de línea:', linea.nombre);
+      const lineas = lineasActivas();
+      for (const lin of lineas) {
+        const lects = s.objetivos?.porLinea?.[lin.id]?.lecturasDefectos || [];
+        if (lects.length > 0) {
+          lecturasDefectos = lects;
+          lineaUsada = lin.id;
+          console.log(`Usando lecturas de ${lin.nombre} para vista consolidada`);
           break;
         }
       }
@@ -1426,182 +1769,269 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
       lecturasDefectos = s.objetivos?.porLinea?.[lineaSeleccionada]?.lecturasDefectos || [];
       lineaUsada = lineaSeleccionada;
     }
-    
-    console.log('Lecturas de defectos encontradas:', lecturasDefectos);
-    console.log('Cantidad de snapshots:', lecturasDefectos.length);
 
-    if (lecturasDefectos.length === 0) {
-      console.log('No hay lecturas de defectos históricas disponibles');
-      
-      // Mostrar mensaje informativo en el canvas
+    // Fallback: Si no hay lecturasDefectos precalculadas, reconstruir desde tomasCalidad
+    if (!lecturasDefectos.length) {
+      const lineasBuscar = (lineaSeleccionada === 'TODAS')
+        ? (lineaUsada ? [lineaPorId(lineaUsada)] : lineasActivas()).filter(Boolean)
+        : [lineaPorId(lineaSeleccionada)].filter(Boolean);
+
+      for (const lin of lineasBuscar) {
+        const o = s.objetivos?.porLinea?.[lin.id];
+        if (o && Array.isArray(o.tomasCalidad)) {
+          const reconstruidas = o.tomasCalidad
+            .filter(t => (t.defectos || []).some(d => (d.nombre || '').trim() && (d.pct != null || d.porcentaje != null)))
+            .map((t, idx) => ({
+              hora: (t.hora || '').trim() || `Toma ${idx + 1}`,
+              defectos: (t.defectos || [])
+                .filter(d => (d.nombre || '').trim() && (d.pct != null || d.porcentaje != null))
+                .map(d => ({
+                  nombre: String(d.nombre).trim(),
+                  porcentaje: Number(d.pct != null ? d.pct : d.porcentaje)
+                }))
+            }));
+          if (reconstruidas.length > 0) {
+            lecturasDefectos = reconstruidas;
+            lineaUsada = lin.id;
+            break;
+          }
+        }
+      }
+    }
+
+    console.log('Lecturas encontradas:', lecturasDefectos.length, lecturasDefectos);
+
+    // Si no hay lecturas, mostrar mensaje amigable en canvas y retornar
+    if (!lecturasDefectos.length) {
+      console.log('No hay lecturas de defectos disponibles');
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '14px sans-serif';
-      ctx.fillStyle = '#94a3b8';
-      ctx.textAlign = 'center';
-      ctx.fillText('Sin datos históricos de defectos', canvas.width / 2, canvas.height / 2 - 10);
-      ctx.font = '12px sans-serif';
-      ctx.fillText('Usa "Indicadores y objetivos" para cargar snapshots', canvas.width / 2, canvas.height / 2 + 10);
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '13px sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText('Sin lecturas de defectos registradas para este turno', canvas.width / 2, canvas.height / 2);
+      }
       return;
     }
 
-    // Extraer las horas de los snapshots y ordenarlas cronológicamente
-    // considerando que el turno puede cruzar la medianoche
-    const lecturasCopia = [...lecturasDefectos];
-    
-    // Función para ordenar horas cronológicamente según el turno seleccionado
-    function ordenarHorasCronologicamente(lecturas) {
-      if (lecturas.length === 0) return lecturas;
-      
-      // Obtener el turno actual (Mañana, Tarde, Noche)
-      const turnoActual = valor('turno');
-      let horaInicioTurno = 6; // Por defecto Mañana
-      if (turnoActual === 'Tarde') {
-        horaInicioTurno = 14;
-      } else if (turnoActual === 'Noche') {
-        horaInicioTurno = 22;
-      }
-      const minutosInicioTurno = horaInicioTurno * 60;
+    // Eje X: determinar horas (horas de turno fijas si coinciden, o las horas de las lecturas)
+    const turnoHoras = HORAS_TURNO[s.turno] || HORAS_TURNO['Mañana'];
+    const horasLecturas = lecturasDefectos.map(l => l.hora).filter(Boolean);
+    const todasEnTurno = horasLecturas.length > 0 && horasLecturas.every(h => turnoHoras.includes(h));
+    const horas = todasEnTurno ? turnoHoras : (horasLecturas.length > 0 ? horasLecturas : turnoHoras);
+    console.log('Horas del turno / eje X:', horas);
 
-      // Convertir todas las horas a minutos desde medianoche
-      const lecturasConMinutos = lecturas.map(l => {
-        const [horas, minutos] = (l.hora || '00:00').split(':').map(Number);
-        return {
-          ...l,
-          minutosDelDia: (isNaN(horas) ? 0 : horas) * 60 + (isNaN(minutos) ? 0 : minutos)
-        };
-      });
-      
-      // Normalizar las horas: si una hora es menor que la hora de inicio del turno, 
-      // asumimos que es del período post-medianoche y le sumamos 24 horas (1440 minutos)
-      lecturasConMinutos.forEach(l => {
-        if (l.minutosDelDia < minutosInicioTurno) {
-          l.minutosNormalizados = l.minutosDelDia + 1440; // +24 horas
-        } else {
-          l.minutosNormalizados = l.minutosDelDia;
-        }
-      });
-      
-      // Ordenar por minutos normalizados
-      return lecturasConMinutos.sort((a, b) => a.minutosNormalizados - b.minutosNormalizados);
-    }
-    
-    const lecturasOrdenadas = ordenarHorasCronologicamente(lecturasCopia);
-    const horas = lecturasOrdenadas.map(l => l.hora);
-
-    // Colores asignados por orden de entrada al Top 4 histórico.
+    // Paleta de colores pasteles suaves y distintivos para los defectos
     const colores = [
-      { border: 'rgb(96, 165, 250)', bg: 'rgba(96, 165, 250, 0.15)' },    // Azul pastel
-      { border: 'rgb(74, 222, 128)', bg: 'rgba(74, 222, 128, 0.15)' },    // Verde pastel
-      { border: 'rgb(251, 146, 60)', bg: 'rgba(251, 146, 60, 0.15)' },    // Naranja pastel
-      { border: 'rgb(248, 113, 113)', bg: 'rgba(248, 113, 113, 0.15)' },   // Rojo pastel
-      { border: 'rgb(168, 85, 247)', bg: 'rgba(168, 85, 247, 0.15)' },    // Violeta pastel
-      { border: 'rgb(14, 165, 233)', bg: 'rgba(14, 165, 233, 0.15)' },    // Celeste pastel
-      { border: 'rgb(234, 179, 8)', bg: 'rgba(234, 179, 8, 0.15)' },      // Amarillo pastel
-      { border: 'rgb(236, 72, 153)', bg: 'rgba(236, 72, 153, 0.15)' }     // Rosa pastel
+      { border: '#f87171', bg: 'rgba(248, 113, 113, 0.15)' }, // Coral pastel
+      { border: '#fb923c', bg: 'rgba(251, 146, 60, 0.15)' }, // Melocotón / Naranja pastel
+      { border: '#a78bfa', bg: 'rgba(167, 139, 250, 0.15)' }, // Lavanda pastel
+      { border: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' }, // Celeste pastel
+      { border: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' }, // Menta pastel
+      { border: '#fcd34d', bg: 'rgba(252, 211, 77, 0.15)' }, // Ámbar pastel
+      { border: '#f472b6', bg: 'rgba(244, 114, 182, 0.15)' }  // Rosa pastel
     ];
 
-    // Obtener todos los defectos que pertenecieron al Top 4 en alguna hora.
-    // Esto permite conservar el último punto del defecto que luego salió.
-    const top4PorHora = lecturasOrdenadas.map(snapshot => {
-      return [...(snapshot.defectos || [])]
-        .sort((a, b) => b.porcentaje - a.porcentaje)
+    // Orden de llegada de defectos al Top 4: el primer defecto que entró al Top 4
+    // conserva el color 0 (coral pastel), el segundo el 1 (melocotón pastel), etc. Si un defecto
+    // ya no está entre los 4 primeros de la hora actual, su color NO se reasigna
+    // a otro: cada defecto mantiene su color asignado permanentemente en el turno.
+    if (!window._ordenDefectosHistorico) window._ordenDefectosHistorico = {};
+    const keyTurnoDef = `${s.fechaOperativa || ''}_${s.turno || ''}`;
+    // Normalizar y sanear orden histórico para que no tenga nombres duplicados o no canónicos
+    if (window._ordenDefectosHistorico[keyTurnoDef]) {
+      window._ordenDefectosHistorico[keyTurnoDef] = window._ordenDefectosHistorico[keyTurnoDef]
+        .map(nom => formatearNombreDefecto(nom))
+        .filter((nom, idx, arr) => nom && arr.indexOf(nom) === idx);
+    } else {
+      window._ordenDefectosHistorico[keyTurnoDef] = [];
+    }
+    const ordenHistorico = window._ordenDefectosHistorico[keyTurnoDef];
+
+    // Recorrer las tomas cronológicamente para registrar qué defectos entraron
+    // al Top 4 y en qué orden.
+    const tomasOrdenadas = [...lecturasDefectos].sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+    tomasOrdenadas.forEach(toma => {
+      const defsMap = normalizarDefectosAMap(toma.defectos);
+      const topToma = Object.entries(defsMap)
+        .filter(([_, v]) => v != null && v > 0)
+        .sort((a, b) => b[1] - a[1])
         .slice(0, 4);
-    });
-
-    const nombresDefectosHistoricos = [];
-    top4PorHora.forEach(top4DeEstaHora => {
-
-      top4DeEstaHora.forEach(defecto => {
-        if (!nombresDefectosHistoricos.includes(defecto.nombre)) {
-          nombresDefectosHistoricos.push(defecto.nombre);
+      topToma.forEach(([nombre]) => {
+        const nomCanonica = formatearNombreDefecto(nombre);
+        if (nomCanonica && !ordenHistorico.includes(nomCanonica)) {
+          ordenHistorico.push(nomCanonica);
         }
       });
     });
 
-    // Ocultar por completo los defectos que llevan dos tomas fuera del Top 4.
-    // Si vuelven a entrar, vuelven a formar parte de la lista y se dibujan.
-    const nombresDefectosVisibles = nombresDefectosHistoricos.filter(nombreDefecto => {
-      let ultimaTomaEnTop4 = -1;
-      top4PorHora.forEach((top4DeEstaHora, indice) => {
-        if (top4DeEstaHora.some(defecto => defecto.nombre === nombreDefecto)) {
-          ultimaTomaEnTop4 = indice;
-        }
-      });
-
-      return ultimaTomaEnTop4 >= top4PorHora.length - 2;
+    // Colores asignados por orden de entrada al Top 4 histórico.
+    const mapaColores = {};
+    ordenHistorico.forEach((nom, idx) => {
+      mapaColores[nom] = idx < colores.length
+        ? colores[idx]
+        : {
+            border: `hsl(${(idx * 55 + 180) % 360}, 60%, 65%)`,
+            bg: `hsla(${(idx * 55 + 180) % 360}, 60%, 65%, 0.15)`
+          };
     });
 
-    // Crear un dataset por cada defecto visible.
-    const datasets = nombresDefectosVisibles.map((nombreDefecto, idx) => {
-      let tomasFueraDelTop4 = 0;
+    // Obtener todos los defectos que pertenecieron al Top 4 en alguna hora.
+    const defectosHistoricos = [...ordenHistorico];
 
-      const datos = top4PorHora.map(top4DeEstaHora => {
-        const defectoEnTop4 = top4DeEstaHora.find(d => d.nombre === nombreDefecto);
+    // Mapear lecturas por hora normalizadas a mapa { defecto: porcentaje }
+    const lecturasPorHora = {};
+    lecturasDefectos.forEach(l => {
+      if (l.hora) {
+        lecturasPorHora[l.hora] = normalizarDefectosAMap(l.defectos);
+      }
+    });
 
-        // Si vuelve a entrar, se reactiva y puede comenzar un nuevo tramo.
-        if (defectoEnTop4) {
-          tomasFueraDelTop4 = 0;
-          return defectoEnTop4.porcentaje;
+    // Encontrar la última hora que tiene datos registrados
+    let ultimaHoraConDatos = -1;
+    for (let i = horas.length - 1; i >= 0; i--) {
+      if (lecturasPorHora[horas[i]] && Object.keys(lecturasPorHora[horas[i]]).length > 0) {
+        ultimaHoraConDatos = i;
+        break;
+      }
+    }
+
+    // Identificar las tomas válidas que tienen defectos registrados
+    const tomasValidas = horas
+      .map(h => ({ hora: h, defectos: lecturasPorHora[h] }))
+      .filter(x => x.defectos && Object.keys(x.defectos).length > 0);
+
+    // Identificar los defectos de la toma actual (última toma registrada) para la leyenda
+    let top4TomaActual = [];
+    if (tomasValidas.length > 0) {
+      const tomaActual = tomasValidas[tomasValidas.length - 1];
+      top4TomaActual = Object.entries(tomaActual.defectos || {})
+        .filter(([_, v]) => v != null && v > 0)
+        .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+        .slice(0, 4)
+        .map(e => formatearNombreDefecto(e[0]));
+    }
+
+    // Para que el gráfico de evolución muestre la historia hora a hora continua de las tomas anteriores,
+    // construimos datasets para todos los defectos que hayan aparecido en el Top 4 del turno (ordenHistorico).
+    let listaDefectosFinal = ordenHistorico.length > 0 ? [...ordenHistorico] : (top4TomaActual.length > 0 ? [...top4TomaActual] : []);
+
+    if (listaDefectosFinal.length === 0 && Array.isArray(defectos) && defectos.length > 0) {
+      listaDefectosFinal = defectos
+        .filter(d => d.porcentaje != null && d.porcentaje > 0)
+        .sort((a, b) => b.porcentaje - a.porcentaje)
+        .slice(0, 4)
+        .map(d => formatearNombreDefecto(d.nombre));
+    }
+
+    // Construir datasets para los defectos del Top 4 de la toma actual
+    const datasets = listaDefectosFinal.map((nombre) => {
+      const color = mapaColores[nombre] || { border: '#64748b', bg: 'rgba(100, 116, 139, 0.1)' };
+
+      // Datos hora a hora del defecto seleccionado
+      const data = horas.map((h, i) => {
+        if (ultimaHoraConDatos >= 0 && i > ultimaHoraConDatos) {
+          return null;
         }
 
-        // Tras dos tomas fuera del Top 4, no se dibuja nada más hasta que
-        // el defecto vuelva a entrar. Esto evita prolongar visualmente una
-        // serie antigua y conserva el último punto válido anterior a la salida.
-        tomasFueraDelTop4 += 1;
-        if (tomasFueraDelTop4 >= 2) return null;
+        const tomaActual = lecturasPorHora[h];
+        if (!tomaActual) return null;
 
-        return null;
+        const val = tomaActual[nombre];
+        return (val != null && !isNaN(val)) ? val : null;
       });
 
-      const color = colores[idx % colores.length];
+      // Último valor válido registrado (para la leyenda)
+      let ultimoValor = null;
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (data[i] !== null && data[i] !== undefined && !isNaN(data[i])) {
+          ultimoValor = data[i];
+          break;
+        }
+      }
+
+      const abrev = obtenerAbreviaturaDefecto(nombre);
+      const nombreDisplay = formatearNombreDefecto(nombre);
+
+      // Etiqueta para la leyenda (ej: "G - GRUMO (3.2%)")
+      const labelConValor = ultimoValor !== null 
+        ? `${nombreDisplay} (${ultimoValor.toFixed(1)}%)`
+        : nombreDisplay;
 
       return {
-        label: nombreDefecto,
-        data: datos,
+        label: labelConValor,
+        nombreDisplay: nombreDisplay,
+        nombreDefecto: nombre,
+        abrev: abrev,
+        data: data,
         borderColor: color.border,
         backgroundColor: color.bg,
-        borderWidth: 2,
-        fill: false,
-        tension: 0, // Líneas rectas sin curvas
-        pointRadius: 6, // Puntos más grandes
+        borderWidth: 2.5,
+        tension: 0.3,
+        spanGaps: false, // No unir el punto anterior con el siguiente cuando sale del Top 4.
+        pointRadius: 5,
+        pointHoverRadius: 7,
         pointBackgroundColor: color.border,
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointHoverRadius: 8, // Hover más grande también
-        // No unir el punto anterior con el siguiente cuando sale del Top 4.
-        spanGaps: false
+        pointBorderColor: color.border,
+        pointBorderWidth: 0,
+        pointHoverBackgroundColor: color.border,
+        pointHoverBorderColor: color.border
       };
     });
 
     if (datasets.length === 0) {
       console.log('No hay defectos históricos que hayan pertenecido al Top 4');
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '13px sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText('Sin defectos registrados en el Top 4', canvas.width / 2, canvas.height / 2);
+      }
       return;
     }
 
-    // Línea de REFERENCIA de defectos (no es un objetivo configurable): una
-    // guía visual fina en 1% para leer de un vistazo si un defecto está por
-    // encima o por debajo de ese umbral. Los defectos de calidad se miden en
-    // porcentajes chicos, así que 1% es una referencia razonable.
-    const refDefectos = 1;
+    console.log('Datasets construidos:', datasets);
 
-    // RANGO DEL EJE Y AUTOMÁTICO: se ajusta a los datos con un margen del ~10%
-    // arriba y abajo, para que ningún % quede pegado al techo ni al piso del
-    // gráfico. Siempre incluye la línea de referencia (1%) dentro del rango.
-    const valoresDef = datasets.flatMap(ds => ds.data.filter(v => v !== null && v !== undefined && !isNaN(v)));
+    // Determinar rango simétrico alrededor de la referencia (1%):
+    // La referencia queda en el medio visual del eje Y (igual que en los
+    // gráficos de Calidad Global y Calidad Parcial).
+    const refDefectos = 1.0;
+    const todosLosValores = datasets.flatMap(d => d.data).filter(v => v !== null && v !== undefined);
+    let yMinDef = 0;
+    let yMaxDef = 2.0;
 
-    let yMinDef, yMaxDef;
-    if (valoresDef.length === 0) {
-      // Sin datos: mostrar la referencia centrada con un rango chico.
-      yMinDef = 0;
-      yMaxDef = Math.max(refDefectos * 2, 2);
+    if (todosLosValores.length > 0) {
+      const maxVal = Math.max(...todosLosValores);
+      const minVal = Math.min(...todosLosValores);
+      const desvioMax = Math.max(
+        Math.abs(maxVal - refDefectos),
+        Math.abs(refDefectos - minVal),
+        0.5 // Rango mínimo de ±0.5% para que no quede plano
+      );
+      const margen = Math.max(desvioMax * 1.25, 0.5);
+      yMinDef = Math.max(0, parseFloat((refDefectos - margen).toFixed(1)));
+      yMaxDef = parseFloat((refDefectos + margen).toFixed(1));
     } else {
-      let minVal = Math.min(...valoresDef, refDefectos);
-      let maxVal = Math.max(...valoresDef, refDefectos);
-      const span = maxVal - minVal;
-      // Margen del 10% del rango (con piso para no aplastar cuando span ~ 0).
-      const margen = Math.max(span * 0.10, 0.3);
-      yMinDef = Math.max(0, minVal - margen);
+      yMinDef = 0;
+      yMaxDef = 2.0;
+    }
+
+    // Asegurar que ningún valor quede fuera del rango
+    if (todosLosValores.length > 0) {
+      const maxVal = Math.max(...todosLosValores);
+      const margen = 0.5;
+      if (maxVal > yMaxDef) {
+        yMaxDef = maxVal + margen;
+      }
+    }
+
+    // Si aún así no alcanza, expandir
+    const maxVal = todosLosValores.length > 0 ? Math.max(...todosLosValores) : 0;
+    if (maxVal > yMaxDef) {
+      const margen = 0.5;
       yMaxDef = maxVal + margen;
     }
 
@@ -1623,9 +2053,12 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
           datalabels: {
             display: false
           },
+          etiquetasBarras: {
+            display: false
+          },
           tooltip: {
             enabled: true,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: 'rgba(15, 23, 42, 0.92)',
             titleColor: '#fff',
             bodyColor: '#fff',
             borderColor: '#475569',
@@ -1634,32 +2067,37 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
             bodySpacing: 6,
             displayColors: true,
             callbacks: {
+              title: function(context) {
+                if (!context.length) return '';
+                const hora = context[0].label;
+                return `Hora: ${hora} hs`;
+              },
               label: function(context) {
                 const valorActual = context.parsed.y;
+                if (valorActual === null || valorActual === undefined || isNaN(valorActual)) return '';
                 const datasetIndex = context.datasetIndex;
                 const dataIndex = context.dataIndex;
                 const dataset = context.chart.data.datasets[datasetIndex];
+                const nombreDisplay = dataset.nombreDisplay || formatearNombreDefecto(dataset.label);
                 
-                let label = `${dataset.label}: ${valorActual.toFixed(2)}%`;
+                let label = `${nombreDisplay} ${valorActual.toFixed(1)}%`;
                 
-                // Calcular diferencia con la lectura anterior
-                if (dataIndex > 0) {
-                  // Buscar el valor anterior (puede ser null si no había dato)
+                // Calcular diferencia con la lectura anterior VÁLIDA de este mismo defecto
+                if (dataIndex > 0 && Array.isArray(dataset.data)) {
                   let valorAnterior = null;
                   for (let i = dataIndex - 1; i >= 0; i--) {
-                    if (dataset.data[i] !== null) {
-                      valorAnterior = dataset.data[i];
+                    const v = dataset.data[i];
+                    if (v !== null && v !== undefined && !isNaN(v)) {
+                      valorAnterior = v;
                       break;
                     }
                   }
                   
                   if (valorAnterior !== null) {
                     const diferencia = valorActual - valorAnterior;
-                    const simbolo = diferencia > 0 ? '↑' : (diferencia < 0 ? '↓' : '→');
-                    const color = diferencia > 0 ? 'subió' : (diferencia < 0 ? 'bajó' : 'sin cambio');
-                    
-                    if (diferencia !== 0) {
-                      label += `  ${simbolo} ${Math.abs(diferencia).toFixed(2)}%`;
+                    if (Math.abs(diferencia) >= 0.05) {
+                      const simbolo = diferencia > 0 ? '↑' : '↓';
+                      label += `  ${simbolo}${Math.abs(diferencia).toFixed(1)}%`;
                     }
                   }
                 }
@@ -1674,7 +2112,13 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
             labels: {
               font: { size: 10 },
               padding: 8,
-              usePointStyle: true
+              usePointStyle: true,
+              filter: function(item, chartData) {
+                if (!top4TomaActual || !top4TomaActual.length) return true;
+                const ds = chartData.datasets[item.datasetIndex];
+                const nom = ds?.nombreDefecto || ds?.nombreDisplay;
+                return top4TomaActual.includes(nom);
+              }
             }
           }
         },
@@ -1732,6 +2176,54 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'right';
           ctx.fillText(`Ref. ${refDefectos}%`, xEnd - 5, yPixel - 4);
+        }
+      }, {
+        // Muestra la abreviatura del defecto + porcentaje (y delta si cambió) en cada punto
+        id: 'etiquetasPuntosDefectos',
+        afterDatasetsDraw(chart) {
+          const ctx = chart.ctx;
+          const posicionesOcupadas = [];
+
+          chart.data.datasets.forEach((dataset, dsIdx) => {
+            const meta = chart.getDatasetMeta(dsIdx);
+            if (meta.hidden) return;
+            const abrev = dataset.abrev || obtenerAbreviaturaDefecto(dataset.nombreDefecto || dataset.label);
+
+            meta.data.forEach((punto, idx) => {
+              const valor = dataset.data[idx];
+              if (valor === null || valor === undefined || isNaN(valor)) return;
+
+              let yPos = punto.y - 9;
+              // Si el punto está pegado al techo del gráfico, mostrar etiqueta debajo
+              if (chart.chartArea && yPos < chart.chartArea.top + 14) {
+                yPos = punto.y + 15;
+              }
+
+              // Evitar superposiciones entre puntos coincidentes o muy cercanos de distintos defectos
+              const colision = posicionesOcupadas.find(p =>
+                Math.abs(p.x - punto.x) < 42 && Math.abs(p.y - yPos) < 13
+              );
+              if (colision) {
+                yPos = colision.y < punto.y ? punto.y + 15 : punto.y - 20;
+              }
+              posicionesOcupadas.push({ x: punto.x, y: yPos });
+
+              ctx.save();
+              ctx.font = 'bold 10px Segoe UI, Arial, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.lineJoin = 'round';
+              ctx.lineWidth = 3;
+              ctx.strokeStyle = '#ffffff';
+              ctx.fillStyle = '#0f172a'; // Color oscuro para máxima visibilidad en fondo blanco
+              const texto = abrev 
+                ? `${abrev} ${Number(valor).toFixed(1)}%` 
+                : `${Number(valor).toFixed(1)}%`;
+              ctx.strokeText(texto, punto.x, yPos);
+              ctx.fillText(texto, punto.x, yPos);
+              ctx.restore();
+            });
+          });
         }
       }]
     });

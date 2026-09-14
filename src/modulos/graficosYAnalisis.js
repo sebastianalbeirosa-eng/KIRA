@@ -27,14 +27,18 @@ const charts = {};
 // Modo (período) actual del Análisis.
 let modoAnalisis = 'turno';
 
-// Plugin propio: dibuja el valor numérico arriba de cada barra.
+// Plugin propio: dibuja el valor numérico arriba de cada barra (SOLO para gráficos de barras).
 const pluginEtiquetasBarras = {
   id: 'etiquetasBarras',
   afterDatasetsDraw(chartInstance) {
+    if (chartInstance.options.plugins?.etiquetasBarras?.display === false) return;
+
+    const chartType = chartInstance.config?.type;
     const { ctx } = chartInstance;
     const sufijo = chartInstance.options.plugins?.etiquetasBarras?.sufijo || '';
     chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
-      if (dataset.type && dataset.type !== 'bar') return;
+      const dsType = dataset.type || chartType;
+      if (dsType !== 'bar') return;
       const meta = chartInstance.getDatasetMeta(datasetIndex);
       if (meta.hidden) return;
       meta.data.forEach((barra, index) => {

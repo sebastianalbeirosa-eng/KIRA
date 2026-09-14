@@ -163,36 +163,52 @@
             <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700 accion-editable" onclick="guardarExcel()">Guardar turno / Excel</button>
           </div>
         </div>
-        <!-- Panel de control de sesión operativa. Los 5 selectores van SIEMPRE
-             en una sola línea (grid-cols-5 fijo), incluso en monitores chicos. -->
-        <div class="panel selectores-turno px-2 py-2 flex flex-wrap gap-2">
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[130px]">Fecha operativa
+        <!-- Panel de control de sesión operativa:
+             Orden: Fecha, Turno, Supervisor, Operario de calidad, Producto, Formato, Área monitoreada, Período.
+             Visible en todas las vistas de planta de todos los logins.
+             Cargado por el Operario de Calidad (y Admin); los demás roles lo visualizan en modo lectura. -->
+        <div class="panel selectores-turno px-2 py-2 grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
+          <!-- 1. FECHA -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Fecha operativa
             <input id="fecha" type="date" class="field mt-1 w-full" onchange="cambiarSesion()">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[110px]">Turno
+
+          <!-- 2. TURNO -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Turno
             <select id="turno" class="field mt-1 w-full" onchange="cambiarTurno()">
               <option value="Mañana">Mañana</option>
               <option value="Tarde">Tarde</option>
               <option value="Noche">Noche</option>
             </select>
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[150px]">Supervisor
-            <input id="supervisor" class="field mt-1 w-full" placeholder="Nombre y apellido" oninput="guardarMeta()">
+
+          <!-- 3. SUPERVISOR -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Supervisor
+            <input id="supervisor" class="field mt-1 w-full" placeholder="Nombre y apellido" oninput="guardarMeta()" onchange="emitirSincronizacionBloque('cabecera')">
           </label>
-          <!-- Solo rol calidad: operario de calidad y producto/formato -->
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[150px]" data-cap="cargarCalidad">Operario de calidad
-            <input id="operarioCalidad" class="field mt-1 w-full" placeholder="Nombre y apellido" oninput="guardarMeta()">
+
+          <!-- 4. OPERARIO DE CALIDAD -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Operario calidad
+            <input id="operarioCalidad" class="field mt-1 w-full" placeholder="Nombre del operario" oninput="guardarMeta()" onchange="emitirSincronizacionBloque('cabecera')">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[130px]" data-cap="cargarCalidad">Producto
-            <input id="productoCabecera" class="field mt-1 w-full" placeholder="Ej: MARA FIT NEGRO" oninput="guardarMeta()">
+
+          <!-- 5. PRODUCTO -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Producto
+            <input id="productoCabecera" class="field mt-1 w-full" placeholder="Ej: MARA FIT NEGRO" oninput="guardarMeta()" onchange="emitirSincronizacionBloque('cabecera')">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[110px]" data-cap="cargarCalidad">Formato
-            <input id="formatoCabecera" class="field mt-1 w-full" placeholder="Ej: 45x45" oninput="guardarMeta()">
+
+          <!-- 6. FORMATO -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Formato
+            <input id="formatoCabecera" class="field mt-1 w-full" placeholder="Ej: 45x45" oninput="guardarMeta()" onchange="emitirSincronizacionBloque('cabecera')">
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[150px]">Área monitoreada
+
+          <!-- 7. ÁREA MONITOREADA -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Área monitoreada
             <select id="lineaVista" class="field mt-1 w-full" onchange="cambiarAreaMonitoreada()"></select>
           </label>
-          <label class="text-[11px] uppercase font-black text-slate-500 flex-1 min-w-[130px]">Período
+
+          <!-- 8. PERÍODO -->
+          <label class="text-[11px] uppercase font-black text-sky-700">Período
             <select id="periodoVista" class="field mt-1 w-full" onchange="cambiarPeriodoVista(this.value)">
               <option value="turno">Turno actual</option>
               <option value="dia">Día completo (24 h)</option>
@@ -219,11 +235,11 @@
           <!-- Tarjetas KPI del turno ... cols-7 indica 7 tarjetas kpis, si modificamos el numero podemos meter mas o menos tarjetas-->
           <div class="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-4" id="vpKpis"></div>
 
-          <!-- Tomas de calidad ENVIADAS del turno (solo rol calidad) -->
-          <div id="vpCalidadTomas" class="mb-4" data-cap="cargarCalidad"></div>
+          <!-- Tomas de calidad ENVIADAS del turno -->
+          <div id="vpCalidadTomas" class="mb-4"></div>
 
-          <!-- Respuesta de producción a los defectos de calidad (solo rol producción) -->
-          <div id="vpProduccionAcciones" class="mb-4" data-cap="cargarProduccion"></div>
+          <!-- Respuesta de producción a los defectos de calidad -->
+          <div id="vpProduccionAcciones" class="mb-4"></div>
 
           <div class="grid grid-cols-1 gap-3">
 
@@ -235,21 +251,21 @@
     <!-- GRAFICOS DE EVOLUCION HORA A HORA DE CALIDAD GLOBAL Y PARCIAL -->
     <div id="gridCalidad" class="grid grid-cols-1 xl:grid-cols-2 gap-3">
       <div id="panelCalidadGlobal" class="panel p-3">
-        <h2 class="font-black text-slate-700 uppercase text-sm mb-2 flex items-center justify-between">
-          <span id="tituloCalidadGlobal">Evolución hora a hora — Calidad Global</span>
-          <span class="text-[10px] font-normal text-slate-400 normal-case">(Objetivo vs Real)</span>
+        <h2 class="font-black text-slate-700 uppercase text-sm flex items-center justify-between gap-2 mb-2">
+          <span id="tituloCalidadGlobal" class="truncate">Evolución hora a hora — Calidad Global</span>
+          <span id="subtituloProductoCalGlobal" class="text-xs font-bold text-slate-800 normal-case tracking-normal truncate text-right flex-shrink-0"></span>
         </h2>
-        <div class="h-64 relative">
+        <div class="h-48 relative">
           <canvas id="chartCalidadGlobal"></canvas>
         </div>
       </div>
 
       <div id="panelCalidadParcial" class="panel p-3">
-        <h2 class="font-black text-slate-700 uppercase text-sm mb-2 flex items-center justify-between">
-          <span>Evolución hora a hora — Calidad Parcial</span>
-          <span class="text-[10px] font-normal text-slate-400 normal-case">(Objetivo vs Real)</span>
+        <h2 class="font-black text-slate-700 uppercase text-sm flex items-center justify-between gap-2 mb-2">
+          <span class="truncate">Evolución hora a hora — Calidad Parcial</span>
+          <span id="subtituloProductoCalParcial" class="text-xs font-bold text-slate-800 normal-case tracking-normal truncate text-right flex-shrink-0"></span>
         </h2>
-        <div class="h-64 relative">
+        <div class="h-48 relative">
           <canvas id="chartCalidadParcial"></canvas>
         </div>
       </div>
@@ -298,6 +314,24 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- EVIDENCIAS FOTOGRÁFICAS DE CALIDAD (Fotos de la última toma vigente) -->
+    <div id="vpFotosCalidadPanel" class="panel p-3">
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <h2 class="font-black text-slate-700 uppercase text-sm">
+            Evidencias fotográficas de calidad — Fotos del momento
+          </h2>
+          <span class="text-[11px] text-slate-400 font-medium hidden sm:inline">(Respaldan la medición actual de calidad)</span>
+        </div>
+        <span id="vpFotosCalidadCount" class="badge bg-sky-100 text-sky-800 text-[11px] font-bold">0 fotos</span>
+      </div>
+      <div id="vpFotosCalidadContainer" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
     </div>
 
     <!-- Grid para poner Orden crítico y Últimas paradas lado a lado -->
@@ -350,18 +384,51 @@
 
     </div>
 
+    <!-- EVIDENCIAS Y ACCIONES CORRECTIVAS DE PRODUCCIÓN (Debajo de paradas de máquinas) -->
+    <div id="vpAccionesProduccionPanel" class="panel p-3">
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <h2 class="font-black text-slate-700 uppercase text-sm">
+            Acciones correctivas y comprobantes de producción
+          </h2>
+          <span class="text-[11px] text-slate-400 font-medium hidden sm:inline">(Ajustes, mejoras e incidencias con comprobantes fotográficos)</span>
+        </div>
+        <span id="vpAccionesProduccionCount" class="badge bg-emerald-100 text-emerald-800 text-[11px] font-bold">0 acciones</span>
+      </div>
+      <div id="vpAccionesProduccionContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </div>
+
     <div class="panel p-3">
       <h2 class="font-black text-slate-700 uppercase text-sm mb-2">
         Nota del turno
       </h2>
 
       <div id="vpComentarioAuto"
-           class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 mb-2 leading-relaxed">
+           class="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2.5 mb-3 leading-relaxed flex flex-wrap items-center gap-y-1 w-full">
       </div>
 
-      <!-- Observaciones cargadas desde la carga de datos de cada rol (solo lectura acá). -->
-      <div id="vpObsProduccion" class="mt-2 text-xs"></div>
-      <div id="vpObsCalidad" class="mt-2 text-xs"></div>
+      <!-- Observaciones de producción y calidad al pie, en 2 columnas mitad/mitad -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Izquierda: observaciones de producción -->
+        <div class="border border-emerald-200 rounded-lg p-3 bg-emerald-50/40 min-h-[80px]">
+          <div class="text-[10px] font-black text-emerald-700 uppercase mb-1 flex justify-between items-center">
+            <span>Observaciones de producción</span>
+            <span id="vpOperarioProduccionBadge" class="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded hidden"></span>
+          </div>
+          <div id="vpObsProduccion" class="text-xs text-slate-700 whitespace-pre-line"></div>
+        </div>
+        <!-- Derecha: observaciones de calidad -->
+        <div class="border border-sky-200 rounded-lg p-3 bg-sky-50/40 min-h-[80px]">
+          <div class="text-[10px] font-black text-sky-700 uppercase mb-1">Observaciones de calidad</div>
+          <div id="vpObsCalidad" class="text-xs text-slate-700 whitespace-pre-line"></div>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -373,8 +440,6 @@
 
         <!-- VISTA 1 (ex "Vista de planta"): CARGA DE DATOS — DASHBOARD Y SINÓPTICO DE LÍNEAS -->
         <section id="vistaDash">
-        
-          <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-3" id="kpis" data-cap="cargarProduccion"></div>
 
           <!-- ============================================================ -->
           <!--  OBJETIVOS Y QUEMADO (inline, solo rol producción)          -->
@@ -389,11 +454,6 @@
                 <h2 class="font-black text-slate-700 uppercase text-sm">Sinóptico de líneas de producción</h2>
                 <p class="text-[11px] text-slate-500">Secuencia del proceso desde prensas hasta entrada de horno. Haga click en una máquina para registrar o gestionar paradas.</p>
               </div>
-              <div class="flex gap-2 no-print">
-                <button class="btn bg-sky-600 text-white hover:bg-sky-700 text-xs py-1.5" onclick="abrirParada()" data-cap="cargarProduccion">Registrar parada</button>
-                <button class="btn bg-amber-600 text-white hover:bg-amber-700 text-xs py-1.5" onclick="abrirAccion()" data-cap="cargarProduccion">Acción correctiva</button>
-
-              </div>
             </div>
             <div id="maquinas"></div>
           </div>
@@ -405,27 +465,23 @@
           <!-- ============================================================ -->
           <div id="panelCalidadInline" class="panel p-3 mb-3" data-cap="cargarCalidad"></div>
 
-         <div class="desktop-grid grid grid-cols-1 xl:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3">
             <div class="panel p-3 flex flex-col" data-cap="cargarProduccion">
-              <div class="flex justify-between items-center mb-2">
-                <h3 class="text-l font-black text-emerald-700 uppercase">Gestión y registro de acciones correctivas</h3>
-                <span id="cantidadAcciones" class="badge bg-emerald-100 text-emerald-800">0</span>
+              <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <h3 class="text-l font-black text-emerald-700 uppercase">Gestión y registro de acciones correctivas</h3>
+                  <span class="text-xs text-slate-400 font-medium hidden sm:inline">(Con comprobantes fotográficos adjuntos)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span id="cantidadAcciones" class="badge bg-emerald-100 text-emerald-800">0</span>
+                  <button class="btn px-4 py-1.5 text-xs bg-emerald-600 text-white hover:bg-emerald-700 font-bold shadow-xs" onclick="abrirAccion()">+ Nueva acción correctiva</button>
+                </div>
               </div>
-              <p class="text-[12px] text-slate-500 mb-2">Ajustes y mejoras realizadas durante el turno sin requerir parada de línea:</p>
-              <div id="accionesRecientes" class="space-y-2 flex-1 max-h-56 overflow-auto border border-slate-200 p-2 rounded bg-slate-50"></div>
-              <div class="mt-2 text-right">
-                <button class="btn px-4 py-2 text-sm bg-emerald-600 text-white text-2s py-1 hover:bg-emerald-700" onclick="abrirAccion()">+ Agregar nueva acción correctiva</button>
-              </div>
-            </div>
-
-            <!-- FOTOS DEL TURNO (producción): subir/arrastrar imágenes -->
-            <div class="panel p-3 flex flex-col" data-cap="cargarProduccion">
-              <div class="flex justify-between items-center mb-2">
-                <h3 class="text-l font-black text-slate-700 uppercase">Fotos del turno</h3>
-                <span id="cantidadFotosProd" class="badge bg-slate-100 text-slate-700">0</span>
-              </div>
-              <p class="text-[12px] text-slate-500 mb-2">Adjuntá fotos de incidencias, máquinas o el estado del turno:</p>
-              <div id="fotosProduccionInline"></div>
+              <p class="text-[12px] text-slate-500 mb-2">Ajustes, mejoras e incidencias registradas durante el turno con comprobantes fotográficos de respaldo:</p>
+              <div id="accionesRecientes" class="space-y-2 flex-1 max-h-72 overflow-auto border border-slate-200 p-2 rounded bg-slate-50"></div>
+              <!-- Contenedor legacy invisible para compatibilidad -->
+              <div id="fotosProduccionInline" class="hidden"></div>
+              <span id="cantidadFotosProd" class="hidden">0</span>
             </div>
           </div>
         </section>
@@ -950,13 +1006,13 @@
      los datos que ya tiene KIRA. Vive fuera del app-shell para
      verse en cualquier pestaña sin que mostrarTab() lo oculte.
      ============================================================ -->
-  <button id="btnAsistente" class="asistente-fab" onclick="alternarAsistente()" title="Asistente de análisis">
+  <button id="btnAsistente" class="asistente-fab" data-cap="verAsistente" onclick="alternarAsistente()" title="Asistente de análisis">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
     </svg>
   </button>
 
-  <aside id="panelAsistente" class="asistente-panel hidden">
+  <aside id="panelAsistente" class="asistente-panel hidden" data-cap="verAsistente">
     <header class="asistente-header">
       <div class="flex items-center gap-2">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
@@ -1117,6 +1173,7 @@
               <div class="sm:col-span-7"><label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1"> Motivo <span class="text-rose-600">*</span></label>
                 <input id="pMotivo" type="text" list="listaMotivosParada" required placeholder="Buscar o escribir el motivo..." class="field w-full font-medium bg-white focus:ring-2 focus:ring-violet-100">
                 <datalist id="listaMotivosParada"></datalist>
+                <datalist id="listaDefectosCalidad"></datalist>
               </div>
             </div>
 
@@ -1294,25 +1351,59 @@
     </div>
   </div>
 
-  <!-- Modal de acción correctiva -->
- <div id="modalAccion" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
-    <form class="panel w-full max-w-xl p-4 bg-white shadow-xl" onsubmit="guardarAccion(event)">
-      <div class="flex justify-between mb-3"><h2 id="modalAccionTitulo" class="font-black text-amber-700">Acción correctiva sin parada</h2><button type="button" onclick="cerrar('modalAccion')">✕</button></div>
-      <!--  guarda el id de la acción cuando se está editando; vacío = alta nueva -->
+  <!-- Modal de acción correctiva con comprobantes fotográficos -->
+  <div id="modalAccion" class="modal fixed inset-0 hidden items-center justify-center z-50 p-3 no-print">
+    <form class="panel w-full max-w-2xl p-4 bg-white shadow-xl max-h-[90vh] overflow-y-auto" onsubmit="guardarAccion(event)">
+      <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2">
+        <div class="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <h2 id="modalAccionTitulo" class="font-black text-emerald-800 text-base">Acción correctiva / Mejora</h2>
+        </div>
+        <button type="button" class="text-slate-400 hover:text-slate-700 text-lg font-bold" onclick="cerrar('modalAccion')">✕</button>
+      </div>
+
+      <!-- guarda el id de la acción cuando se está editando; vacío = alta nueva -->
       <input type="hidden" id="editAccionId">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label class="text-xs font-bold">Línea<select id="aLinea" class="field mt-1"></select></label>
-        <label class="text-xs font-bold">Hora<input id="aHora" type="time" class="field mt-1" required></label>
-        <label class="text-xs font-bold md:col-span-2">Equipo o sector<input id="aEquipo" class="field mt-1" required></label>
-        <label class="text-xs font-bold md:col-span-2">Acción realizada<textarea id="aDetalle" rows="3" class="field mt-1" required></textarea></label>
-        <label class="text-xs font-bold md:col-span-2">Responsable<input id="aResponsable" class="field mt-1"></label>
+        <label class="text-xs font-bold text-slate-700">Línea<select id="aLinea" class="field mt-1"></select></label>
+        <label class="text-xs font-bold text-slate-700">Hora<input id="aHora" type="time" class="field mt-1" required></label>
+        <label class="text-xs font-bold text-slate-700 md:col-span-2">Equipo o sector<input id="aEquipo" class="field mt-1" placeholder="Ej: Prensa 1, Esmaltadora, Cintas..." required></label>
+        <label class="text-xs font-bold text-slate-700 md:col-span-2">Acción realizada / Ajuste<textarea id="aDetalle" rows="3" class="field mt-1" placeholder="Describí la acción correctiva, ajuste o solución aplicada..." required></textarea></label>
+        <label class="text-xs font-bold text-slate-700 md:col-span-2">Responsable / Operario<input id="aResponsable" class="field mt-1" placeholder="Nombre del responsable"></label>
       </div>
-      <div class="flex justify-between items-center mt-4">
-        <!--  acá se inyecta el botón "Eliminar acción" solo cuando estamos editando -->
+
+      <!-- Zona de fotos / comprobantes -->
+      <div class="mt-4 border-t border-slate-200 pt-3">
+        <div class="flex justify-between items-center mb-1.5">
+          <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+            <span>📷 Fotos / Comprobantes de la acción</span>
+            <span class="text-[11px] font-normal text-slate-400">(opcional · respaldo o evidencia)</span>
+          </label>
+          <span id="cantidadFotosAccionModal" class="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">0 foto(s)</span>
+        </div>
+
+        <div class="border-2 border-dashed border-emerald-300 rounded-lg p-3 bg-emerald-50/20 hover:border-emerald-500 transition"
+             ondragover="event.preventDefault()" ondrop="soltarFotosAccion(event)">
+          <label class="cursor-pointer flex items-center justify-center gap-2 border border-dashed border-emerald-500 bg-white rounded-md py-2 px-3 text-emerald-800 hover:bg-emerald-50 text-xs font-bold transition shadow-xs">
+            <span class="text-base leading-none">＋</span>
+            <span>Subir o arrastrar fotos como comprobante</span>
+            <input type="file" accept="image/*" multiple class="hidden" onchange="subirFotosAccion(this)">
+          </label>
+          <div id="previewFotosAccion" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2.5"></div>
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center mt-5 border-t border-slate-200 pt-3">
+        <!-- acá se inyecta el botón "Eliminar acción" solo cuando estamos editando -->
         <div id="btnEliminarAccionContainer"></div>
         <div class="flex gap-2">
-          <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300" onclick="cerrar('modalAccion')">Cancelar</button>
-          <button class="btn bg-amber-600 text-white hover:bg-amber-700">Guardar acción</button>
+          <button type="button" class="btn bg-slate-200 text-slate-700 hover:bg-slate-300 text-xs" onclick="cerrar('modalAccion')">Cancelar</button>
+          <button type="submit" class="btn bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs px-4 py-2 shadow-xs">✓ Guardar y enviar acción</button>
         </div>
       </div>
     </form>
@@ -1331,7 +1422,7 @@
       <div class="grid grid-cols-1 gap-3">
         <label class="text-xs font-bold">Línea<select id="dLinea" class="field mt-1"></select></label>
         <label class="text-xs font-bold">Hora<input id="dHora" type="time" class="field mt-1"></label>
-        <label class="text-xs font-bold">Tipo de defecto<input id="dNombre" class="field mt-1" placeholder="Ej: Suciedad sobre bizcocho" required></label>
+        <label class="text-xs font-bold">Tipo de defecto<input id="dNombre" list="listaDefectosCalidad" class="field mt-1" placeholder="Ej: SB - Suciedad sobre bizcocho" required></label>
         <label class="text-xs font-bold">Porcentaje sobre producción (%)<input id="dPorcentaje" type="number" min="0" max="100" step="0.1" class="field mt-1" placeholder="Ej: 1.5" required></label>
         <label class="text-xs font-bold">Acción correctiva aplicada<textarea id="dAccion" rows="2" class="field mt-1" placeholder="Ej: Ajuste de parámetros de esmaltado"></textarea></label>
         <label class="text-xs font-bold">Observaciones<textarea id="dObs" rows="2" class="field mt-1" placeholder="Detalle adicional, condición detectada, etc."></textarea></label>

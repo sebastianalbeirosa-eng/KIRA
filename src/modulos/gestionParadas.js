@@ -16,7 +16,8 @@ import { sesion, lineasActivas, nombreLinea, equipoPorId, equipoPorNombre } from
 import { cargarEquipos, cargarMotivos, guardarMotivoSiEsNuevo, actualizarSubEquipoSelect } from './clasificacionEquipos.js';
 import { mostrarAlertaKira, mostrarConfirmacionKira } from '../nucleo/alertasKira.js';
 
-import { renderTodo } from './vistaDePlanta.js';
+import { renderTodo, renderVistaPlanta } from './vistaDePlanta.js';
+import { emitirSincronizacionBloque } from '../nucleo/almacenamiento.js';
 
 // ==========================================================
 // ESTADO LOCAL DEL MÓDULO
@@ -188,7 +189,8 @@ export function guardarParada(e) {
     vacio: numero('pVacio'),
     eventos: numero('pEventos'),
     obs: valor('pObs').trim(),
-    creado: new Date().toISOString()
+    creado: new Date().toISOString(),
+    enviada: true
   };
 
   const s = sesion();
@@ -203,6 +205,10 @@ export function guardarParada(e) {
   persistir();
   cerrar('modalParada');
   renderTodo();
+  if (typeof renderVistaPlanta === 'function') {
+    renderVistaPlanta();
+  }
+  emitirSincronizacionBloque('guardarParada');
 }
 
 /*
@@ -224,9 +230,13 @@ export function eliminarParadaDirecta(id) {
   s.actualizada = new Date().toISOString();
   persistir();
   renderTodo();
+  if (typeof renderVistaPlanta === 'function') {
+    renderVistaPlanta();
+  }
   if (typeof renderListaParadasEquipo === 'function') {
     renderListaParadasEquipo();
   }
+  emitirSincronizacionBloque('eliminarParada');
 }
 
 // ==========================================================

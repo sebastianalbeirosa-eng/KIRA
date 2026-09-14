@@ -179,12 +179,70 @@ body {
   border-radius: 6px; 
   padding: .55rem .8rem; 
   font-weight: 700; 
-  transition: .15s; 
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease; 
   white-space: nowrap; 
 }
 
-.btn:hover { 
-  filter: brightness(1.12); 
+/* EFECTO HOVER Y FOCO EN BOTONES Y SELECTORES (TODAS LAS SESIONES) */
+/* Excluye expresamente la pestaña lateral (.sidebar-toggle) para que no se mueva verticalmente */
+button:not(.sidebar-toggle), .btn:not(.sidebar-toggle) {
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:not(.sidebar-toggle):hover, .btn:not(.sidebar-toggle):hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.12), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+button:not(.sidebar-toggle):active, .btn:not(.sidebar-toggle):active {
+  transform: translateY(0) scale(0.98);
+  filter: brightness(0.95);
+  box-shadow: none;
+}
+
+/* La pestaña del sidebar se mantiene fija en su eje vertical (-50%) sin saltos */
+.sidebar-toggle,
+.sidebar-toggle:hover,
+.sidebar-toggle:active,
+.sidebar-toggle:focus {
+  transform: translateY(-50%) !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+/* Selectores y campos interactivos de selección */
+select, select.field, .field[type="date"], .field[type="time"] {
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+select:hover, select.field:hover, .field[type="date"]:hover, .field[type="time"]:hover {
+  border-color: #0284c7 !important;
+  background-color: #f0f9ff !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.18);
+}
+
+select:focus, select.field:focus, .field[type="date"]:focus, .field[type="time"]:focus {
+  border-color: #0369a1 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.28);
+  outline: none;
+}
+
+/* Tarjetas interactivas de máquinas */
+.machine {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.machine:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.15);
+  border-color: #0284c7;
+}
+
+.machine:active {
+  transform: translateY(0) scale(0.98);
 }
 
 /* 6. SINÓPTICO DE LÍNEAS DE PRODUCCIÓN Y MÁQUINAS */
@@ -954,8 +1012,18 @@ body {
   z-index: 60;
 }
 
+.asistente-fab.hidden {
+  display: none !important;
+}
+
 .asistente-panel.hidden {
-  display: none;
+  display: none !important;
+}
+
+/* Modo supervisor: eliminar por completo el cajón de ayuda de KIRA Análisis */
+body.modo-supervisor .asistente-fab,
+body.modo-supervisor .asistente-panel {
+  display: none !important;
 }
 
 .asistente-header {

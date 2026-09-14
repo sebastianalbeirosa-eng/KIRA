@@ -26,16 +26,17 @@
   en constructorPlanta.js).
 */
 
-import { db, persistir } from './nucleo/almacenamiento.js';
-import { asegurarModeloPlanta, sesion, lineasActivas, asegurarObjetivosSesion } from './nucleo/estado.js';
+import { db, persistir, STORAGE_KEY, SYNC_BLOQUE_KEY, recargarDB, emitirSincronizacionBloque } from './nucleo/almacenamiento.js';
+import { asegurarModeloPlanta, sesion, lineasActivas, asegurarObjetivosSesion, cargarCatalogoDefectosDesdeJson } from './nucleo/estado.js';
 import { valor, esc, hoyLocal } from './nucleo/utilidades.js';
+import { refrescarDatalistDefectos } from './modulos/cargaCalidad.js';
 
 import { renderTodo, renderVistaPlanta } from './modulos/vistaDePlanta.js';
 import { renderAnalisis } from './modulos/graficosYAnalisis.js';
 import { renderHistorico } from './modulos/historicos.js';
 import { renderConstructor } from './modulos/constructorPlanta.js';
 import { determinarTurnoAutomatico, detectarNuevoTurno } from './modulos/gestionTurno.js';
-import { permisosActuales, puedeVerTab, areaDelRol } from './nucleo/roles.js';
+import { permisosActuales, puedeVerTab, areaDelRol, puede } from './nucleo/roles.js';
 import { renderUsuarios } from './modulos/gestionUsuarios.js';
 
 // ==========================================================
@@ -158,14 +159,18 @@ asegurarModeloPlanta();
 export function mostrarTab(tab) {
   // Control de acceso: si el rol no puede ver esa pestaña, se redirige a la
   // pestaña inicial de su rol (defensa por si se llama mostrarTab a mano).
+  const permisos = permisosActuales();
   if (!puedeVerTab(tab)) {
-    tab = permisosActuales().tabInicial;
+    tab = permisos.tabInicial;
   }
   ['planta', 'analisis', 'historico', 'dash', 'constructor', 'acerca', 'usuarios'].forEach(x => {
     const vista = document.getElementById('vista' + x[0].toUpperCase() + x.slice(1));
     const boton = document.getElementById('tab' + x[0].toUpperCase() + x.slice(1));
     if (vista) vista.classList.toggle('hidden', x !== tab);
-    if (boton) boton.className = `side-link ${x === tab ? 'active' : ''}`;
+    if (boton) {
+      boton.classList.toggle('active', x === tab);
+      boton.classList.toggle('hidden', !permisos.tabs.includes(x));
+    }
   });
   document.getElementById('headerOperativo').classList.toggle('hidden', tab === 'acerca' || tab === 'usuarios');
   if (tab === 'planta') renderVistaPlanta();
@@ -201,7 +206,46 @@ export function aplicarPermisosMenu() {
   //    los botones/acciones editables (ej. "Eliminar" en el histórico).
   document.body.classList.toggle('rol-solo-lectura', !!permisos.caps.soloLectura);
 
-  // 3b) Título del header según el rol: calidad ve "Control de Calidad".
+  // 3a) Modo supervisor: eliminar por completo el cajón de ayuda de KIRA Análisis
+  const esSupervisor = (permisosActuales().etiqueta === 'Supervisor') || document.body.classList.contains('rol-solo-lectura');
+  document.body.classList.toggle('modo-supervisor', esSupervisor);
+  const btnAsist = document.getElementById('btnAsistente');
+  const panelAsist = document.getElementById('panelAsistente');
+  if (btnAsist) {
+    btnAsist.classList.toggle('hidden', esSupervisor);
+    if (esSupervisor) btnAsist.style.setProperty('display', 'none', 'important');
+    else btnAsist.style.removeProperty('display');
+  }
+  if (panelAsist) {
+    if (esSupervisor) {
+      panelAsist.classList.add('hidden');
+      panelAsist.style.setProperty('display', 'none', 'important');
+    } else {
+      panelAsist.style.removeProperty('display');
+    }
+  }
+
+  // 3b) Permisos de edición en la barra superior (Operario Calidad, Producto, Formato)
+  // El operario de calidad (y admin) pueden cargar y editar.
+  // Los demás logins (producción, supervisor) los visualizan en modo lectura en todas las vistas de planta.
+  const puedeCargarCal = puede('cargarCalidad');
+  ['operarioCalidad', 'productoCabecera', 'formatoCabecera'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (puedeCargarCal) {
+      el.removeAttribute('readonly');
+      el.classList.remove('bg-slate-100', 'text-slate-700', 'cursor-default');
+      el.classList.add('bg-white');
+      el.title = 'Podés ingresar o modificar este dato';
+    } else {
+      el.setAttribute('readonly', 'true');
+      el.classList.add('bg-slate-100', 'text-slate-700', 'cursor-default');
+      el.classList.remove('bg-white');
+      el.title = 'Cargado por el Operario de Calidad (solo lectura)';
+    }
+  });
+
+  // 3c) Título del header según el rol: calidad ve "Control de Calidad".
   const tit = document.getElementById('tituloApp');
   const sub = document.getElementById('subtituloApp');
   if (tit && sub) {
@@ -232,27 +276,55 @@ export function cambiarSesion() {
 }
 
 /**
- * Rellena los campos de cabecera propios del rol calidad (operario, producto,
- * formato) desde la sesión. El operario es por línea (la monitoreada); el
- * producto/formato son de la sesión. Se llama al cambiar sesión o de línea.
+ * Rellena los campos de cabecera propios de calidad (operario, producto, formato)
+ * desde la sesión. Se sincronizan en todos los logins y no se pierden al cambiar de línea.
  */
 export function cargarCabeceraCalidad() {
   const s = sesion();
-  const lineaId = valor('lineaVista');
-  const lid = (lineaId && lineaId !== 'TODAS' && lineaId !== 'GENERAL') ? lineaId : (lineasActivas()[0]?.id || '');
   asegurarObjetivosSesion(s);
 
-  // Producto/formato VIGENTE: se toma de las tomas de calidad (el último
-  // producto/formato cargado en una toma). Si aún no hay ninguno, cae al valor
-  // manual guardado en la sesión.
-  const vig = (lid && window.productoVigenteCalidad) ? window.productoVigenteCalidad(lid) : { producto: '', formato: '' };
+  // Leer valores guardados a nivel de sesión
+  const prodVal = (s.productoCalidad || '').trim();
+  const fmtVal = (s.formatoCalidad || '').trim();
+  let opVal = (s.operarioCalidad || '').trim();
+
+  // Si el campo operario está vacío y el usuario logueado es rol calidad, pre-completar con su nombre
+  if (!opVal) {
+    try {
+      const rawSesion = sessionStorage.getItem('kiraSession') || localStorage.getItem('kiraSession');
+      if (rawSesion) {
+        const u = JSON.parse(rawSesion);
+        if (u.rol === 'calidad' && u.nombre) {
+          opVal = u.nombre;
+          s.operarioCalidad = opVal;
+          lineasActivas().forEach(l => {
+            const o = s.objetivos?.porLinea?.[l.id];
+            if (o) o.operarioCalidad = opVal;
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // Sincronizar operario de producción si el usuario logueado es del rol producción
+  try {
+    const rawSesion = sessionStorage.getItem('kiraSession') || localStorage.getItem('kiraSession');
+    if (rawSesion) {
+      const u = JSON.parse(rawSesion);
+      if ((u.rol === 'produccion' || u.rol === 'operario') && (u.nombre || u.usuario)) {
+        s.operarioProduccion = u.nombre || u.usuario;
+      }
+    }
+  } catch {}
+
   const prodEl = document.getElementById('productoCabecera');
-  if (prodEl) prodEl.value = vig.producto || s.productoCalidad || '';
+  if (prodEl && prodEl.value.trim() !== prodVal) prodEl.value = prodVal;
+
   const fmtEl = document.getElementById('formatoCabecera');
-  if (fmtEl) fmtEl.value = vig.formato || s.formatoCalidad || '';
+  if (fmtEl && fmtEl.value.trim() !== fmtVal) fmtEl.value = fmtVal;
 
   const opEl = document.getElementById('operarioCalidad');
-  if (opEl) opEl.value = (lid && s.objetivos?.porLinea?.[lid]?.operarioCalidad) || '';
+  if (opEl && opEl.value.trim() !== opVal) opEl.value = opVal;
 }
 
 /**
@@ -265,31 +337,39 @@ export function cambiarTurno() {
   detectarNuevoTurno(valor('fecha'), valor('turno'));
 }
 
-/** Guarda el nombre del supervisor cargado en el header operativo. */
+/** Guarda los datos ingresados en el header operativo (supervisor, operario calidad, producto, formato). */
 export function guardarMeta() {
   const s = sesion();
   s.supervisor = valor('supervisor').trim();
 
-  // Campos de la cabecera propios del rol calidad (solo existen si están
-  // montados). Producto/formato de calidad se guardan a nivel sesión; el
-  // operario de calidad, en el objeto de calidad de la línea monitoreada.
   const opEl = document.getElementById('operarioCalidad');
   if (opEl) {
-    const lineaId = valor('lineaVista');
-    const lid = (lineaId && lineaId !== 'TODAS' && lineaId !== 'GENERAL') ? lineaId : (lineasActivas()[0]?.id || '');
-    if (lid) {
-      asegurarObjetivosSesion(s);
-      const o = s.objetivos?.porLinea?.[lid];
-      if (o) o.operarioCalidad = opEl.value.trim();
-    }
+    const opVal = opEl.value.trim();
+    s.operarioCalidad = opVal;
+    // Sincronizar con todas las líneas para reportes ASAKAI y Excel
+    asegurarObjetivosSesion(s);
+    lineasActivas().forEach(l => {
+      const o = s.objetivos?.porLinea?.[l.id];
+      if (o) o.operarioCalidad = opVal;
+    });
   }
+
   const prodEl = document.getElementById('productoCabecera');
   if (prodEl) s.productoCalidad = prodEl.value.trim();
+
   const fmtEl = document.getElementById('formatoCabecera');
   if (fmtEl) s.formatoCalidad = fmtEl.value.trim();
 
   s.actualizada = new Date().toISOString();
   persistir();
+
+  // Actualizar subtítulo de producto/formato en los gráficos de calidad de Vista de Planta
+  const prodSub = (s.productoCalidad || '').trim();
+  const fmtSub  = (s.formatoCalidad  || '').trim();
+  const subtituloProd = prodSub ? `${prodSub}${fmtSub ? ' · ' + fmtSub : ''}` : '';
+  ['subtituloProductoCalGlobal','subtituloProductoCalParcial'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = subtituloProd;
+  });
 }
 
 /**
@@ -363,6 +443,8 @@ window.addEventListener('load', () => {
   cargarInfoUsuario();
   
   refrescarSelectoresLineas();
+  refrescarDatalistDefectos();
+  cargarCatalogoDefectosDesdeJson();
 
   document.getElementById('fecha').value = hoyLocal();
   document.getElementById('turno').value = determinarTurnoAutomatico(); // Asignación automática por horario
@@ -386,6 +468,41 @@ window.addEventListener('load', () => {
 });
 
 // ==========================================================
+// SINCRONIZACIÓN EN VIVO ENTRE PESTAÑAS Y VENTANAS (POR BLOQUES)
+// ----------------------------------------------------------
+// Se ejecuta ÚNICAMENTE cuando un usuario pulsa botones de
+// guardar, enviar o actualizar datos (paradas, acciones,
+// tomas de calidad, notas, etc.), evitando actualizaciones
+// continuas por tipeo o cambios parciales de inputs.
+// ==========================================================
+function sincronizarVistasEnVivo() {
+  recargarDB();
+  if (typeof renderVistaPlanta === 'function' && !document.getElementById('vistaPlanta')?.classList.contains('hidden')) {
+    renderVistaPlanta();
+  }
+  if (typeof renderTodo === 'function' && !document.getElementById('vistaDash')?.classList.contains('hidden')) {
+    renderTodo();
+  }
+}
+
+window.addEventListener('storage', (e) => {
+  if (e.key === SYNC_BLOQUE_KEY) {
+    sincronizarVistasEnVivo();
+  }
+});
+
+if (typeof BroadcastChannel !== 'undefined') {
+  try {
+    const canalSync = new BroadcastChannel('kira_sync');
+    canalSync.addEventListener('message', (ev) => {
+      if (ev.data && ev.data.tipo === 'sync_bloque') {
+        sincronizarVistasEnVivo();
+      }
+    });
+  } catch {}
+}
+
+// ==========================================================
 // EXPOSICIÓN A window
 // ----------------------------------------------------------
 // mostrarTab, cambiarSesion, guardarMeta y alternarSidebar se
@@ -397,3 +514,4 @@ window.cambiarTurno = cambiarTurno;
 window.guardarMeta = guardarMeta;
 window.cargarCabeceraCalidad = cargarCabeceraCalidad;
 window.alternarSidebar = alternarSidebar;
+window.emitirSincronizacionBloque = emitirSincronizacionBloque;

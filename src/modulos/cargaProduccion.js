@@ -307,6 +307,7 @@ export function onCambioAccionProd(el) {
 export function onCambioObsProduccion(el) {
   const s = sesion();
   s.notaTurno = el.value;
+  s.observacionesTurno = el.value;
   s.notaProdEnviada = false;
   persistir();
 }
@@ -319,7 +320,10 @@ export function enviarObsProduccion() {
     s.operarioProduccion = usr.nombre || usr.usuario;
   }
   const el = document.getElementById('obsProduccionTxt');
-  if (el) { s.notaTurno = el.value; }
+  if (el) {
+    s.notaTurno = el.value;
+    s.observacionesTurno = el.value;
+  }
   s.notaProdEnviada = true;
   persistir();
   renderObsProduccionPie();

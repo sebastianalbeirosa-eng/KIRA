@@ -281,13 +281,13 @@
     <!-- Grid para poner Mapa de calidad y el gráfico de evolución de defectos -->
     <div class="grid grid-cols-1 xl:grid-cols-[auto_1fr] gap-3">
       
-      <div class="panel p-3 overflow-auto max-w-fit flex flex-col">
+      <div id="panelMapaDefectos" class="panel p-3 overflow-auto max-w-fit flex flex-col">
         <h2 class="font-black text-rose-700 uppercase text-sm mb-2">
           Mapa de calor de calidad — Defectos del turno
         </h2>
 
-        <div id="contenedorTablaDefectos" class="max-h-[245px] overflow-y-auto">
-        <table class="table w-auto text-xs text-slate-800">
+        <div id="contenedorTablaDefectos" class="overflow-y-auto">
+        <table class="table w-full text-xs text-slate-800">
           <thead>
             <tr>
               <th class="text-center w-12">#</th>
@@ -304,7 +304,7 @@
         </div>
       </div>
 
-      <div class="panel p-3">
+      <div id="panelEvolucionDefectos" class="panel p-3">
         <h2 class="font-black text-rose-700 uppercase text-sm mb-2 flex items-center justify-between">
           <span>Evolución hora a hora — Defectos de Calidad</span>
           <span class="text-[10px] font-normal text-slate-400 normal-case">(% de defectos por hora)</span>

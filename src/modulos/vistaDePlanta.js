@@ -973,9 +973,9 @@ export function renderVistaPlanta() {
 
   document.getElementById('vpComentarioAuto').innerHTML = frasesAuto.join('<span class="text-slate-300 font-bold mx-2 hidden sm:inline">|</span>');
 
-  // Observaciones de producción: mostrar solo las del operario de turno actual
-  // y reflejar la badge con el nombre del operario logueado.
-  const obsProd = (s.observacionesTurno || '').trim();
+  // Observaciones de producción: mostrar la nota del turno actual (s.notaTurno)
+  // y reflejar el badge con el operario que la cargó.
+  const obsProd = (s.notaTurno || s.observacionesTurno || '').trim();
   const elObsProd = document.getElementById('vpObsProduccion');
   if (elObsProd) elObsProd.innerHTML = obsProd
     ? esc(obsProd)
@@ -984,8 +984,9 @@ export function renderVistaPlanta() {
   const opProdBadge = document.getElementById('vpOperarioProduccionBadge');
   if (opProdBadge) {
     const usuarioAct = usuarioActual();
-    if (usuarioAct && usuarioAct.rol === 'produccion' && usuarioAct.nombre) {
-      opProdBadge.textContent = usuarioAct.nombre;
+    const opNom = s.operarioProduccion || (usuarioAct && (usuarioAct.rol === 'produccion' || usuarioAct.rol === 'operario') ? (usuarioAct.nombre || usuarioAct.usuario) : '');
+    if (opNom) {
+      opProdBadge.textContent = `👷 ${opNom}`;
       opProdBadge.classList.remove('hidden');
     } else {
       opProdBadge.textContent = '';

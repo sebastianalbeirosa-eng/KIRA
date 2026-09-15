@@ -94,7 +94,7 @@ function inputToma(lineaId, i, sub, tipo, valorActual, extraClass = '', placehol
   const v = tipo === 'time' ? (valorActual || '') : numAttr(valorActual);
   const stepAttr = step ? `step="${step}"` : '';
   return `<input type="${tipo}" ${stepAttr} value="${esc(String(v))}" placeholder="${esc(placeholder)}"
-    class="field text-xs p-1 mt-0.5 ${extraClass}" onchange="onCambioCalidad(this)"
+    class="field text-[13px] p-1 mt-0.5 ${extraClass}" onchange="onCambioCalidad(this)"
     data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-sub="${sub}">`;
 }
 
@@ -103,19 +103,19 @@ function htmlDefectos(lineaId, i, defectos) {
   const filas = defectos.map((d, j) => `
     <div class="flex flex-wrap items-center gap-1 mb-1">
       <input type="text" list="listaDefectosCalidad" value="${esc(d.nombre || '')}" placeholder="Defecto (código o nombre)"
-        class="field text-[11px] p-1 flex-1 min-w-[110px]" onchange="onCambioLista(this)"
+        class="field text-xs p-1 flex-1 min-w-[110px]" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="defectos" data-cal-fila="${j}" data-cal-campo="nombre">
       <input type="number" step="0.01" min="0" value="${numAttr(d.pct)}" placeholder="%"
-        class="field text-[11px] p-1 w-16" onchange="onCambioLista(this)"
+        class="field text-xs p-1 w-16" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="defectos" data-cal-fila="${j}" data-cal-campo="pct">
       <input type="text" value="${esc(d.aclaracion || '')}" placeholder="Aclaración (opcional)"
-        class="field text-[11px] p-1 flex-1 min-w-[120px]" onchange="onCambioLista(this)"
+        class="field text-xs p-1 flex-1 min-w-[120px]" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="defectos" data-cal-fila="${j}" data-cal-campo="aclaracion">
       <button type="button" class="text-rose-500 font-bold text-sm px-1" title="Eliminar defecto"
         onclick="quitarFilaCalidad('${lineaId}', ${i}, 'defectos', ${j})">✕</button>
     </div>`).join('');
   return `${filas}
-    <button type="button" class="text-[11px] font-bold text-rose-600 hover:underline"
+    <button type="button" class="text-xs font-bold text-rose-600 hover:underline"
       onclick="agregarFilaCalidad('${lineaId}', ${i}, 'defectos')">+ agregar defecto</button>`;
 }
 
@@ -124,19 +124,19 @@ function htmlRoturas(lineaId, i, roturas) {
   const filas = roturas.map((d, j) => `
     <div class="flex flex-wrap items-center gap-1 mb-1">
       <input type="text" list="listaDefectosCalidad" value="${esc(d.nombre || '')}" placeholder="Defecto a rotura (código o nombre)"
-        class="field text-[11px] p-1 flex-1 min-w-[110px]" onchange="onCambioLista(this)"
+        class="field text-xs p-1 flex-1 min-w-[110px]" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="roturas" data-cal-fila="${j}" data-cal-campo="nombre">
       <input type="number" step="0.01" min="0" value="${numAttr(d.pct)}" placeholder="%"
-        class="field text-[11px] p-1 w-16" onchange="onCambioLista(this)"
+        class="field text-xs p-1 w-16" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="roturas" data-cal-fila="${j}" data-cal-campo="pct">
       <input type="text" value="${esc(d.aclaracion || '')}" placeholder="Aclaración (opcional)"
-        class="field text-[11px] p-1 flex-1 min-w-[120px]" onchange="onCambioLista(this)"
+        class="field text-xs p-1 flex-1 min-w-[120px]" onchange="onCambioLista(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-lista="roturas" data-cal-fila="${j}" data-cal-campo="aclaracion">
       <button type="button" class="text-rose-500 font-bold text-sm px-1" title="Eliminar"
         onclick="quitarFilaCalidad('${lineaId}', ${i}, 'roturas', ${j})">✕</button>
     </div>`).join('');
   return `${filas}
-    <button type="button" class="text-[11px] font-bold text-slate-600 hover:underline"
+    <button type="button" class="text-xs font-bold text-slate-600 hover:underline"
       onclick="agregarFilaCalidad('${lineaId}', ${i}, 'roturas')">+ agregar defecto a rotura</button>`;
 }
 
@@ -145,13 +145,13 @@ function htmlAcciones(lineaId, i, acciones) {
   const filas = acciones.map((a, j) => `
     <div class="flex items-center gap-1 mb-1">
       <input type="text" value="${esc(a || '')}" placeholder="Ej: calibración de Qualitron"
-        class="field text-[11px] p-1 flex-1" onchange="onCambioAccion(this)"
+        class="field text-xs p-1 flex-1" onchange="onCambioAccion(this)"
         data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-accion="${j}">
       <button type="button" class="text-rose-500 font-bold text-sm px-1" title="Eliminar acción"
         onclick="quitarAccionCalidad('${lineaId}', ${i}, ${j})">✕</button>
     </div>`).join('');
   return `${filas}
-    <button type="button" class="text-[11px] font-bold text-emerald-600 hover:underline"
+    <button type="button" class="text-xs font-bold text-emerald-600 hover:underline"
       onclick="agregarAccionCalidad('${lineaId}', ${i})">+ agregar acción</button>`;
 }
 
@@ -169,7 +169,7 @@ function htmlFotos(lineaId, i, fotos) {
     <div class="relative group">
       <div class="w-full h-64 bg-slate-100 rounded-lg border border-slate-300 overflow-hidden flex items-center justify-center cursor-zoom-in shadow-sm"
         onclick="ampliarFotoCalidad('${src.replace(/'/g, "\\'")}')">
-        <img src="${src}" class="max-w-full max-h-full object-contain" alt="foto defecto">
+      <img src="${src}" class="max-w-full max-h-full object-contain" alt="foto defecto">
       </div>
       <button type="button" class="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-6 h-6 text-xs leading-none font-bold shadow"
         title="Eliminar foto" onclick="quitarFotoCalidad('${lineaId}', ${i}, ${j})">✕</button>
@@ -178,14 +178,14 @@ function htmlFotos(lineaId, i, fotos) {
     <div class="border-2 border-dashed border-slate-300 rounded-lg p-3 hover:border-sky-400 transition"
       ondragover="event.preventDefault()" ondrop="soltarFotoCalidad(event, '${lineaId}', ${i})">
       <!-- Botón de carga compacto (no ocupa una celda de foto) -->
-      <label class="cursor-pointer flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-lg py-2 mb-3 text-slate-400 hover:border-sky-400 hover:text-sky-500 text-sm">
+      <label class="cursor-pointer flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-lg py-2 mb-3 text-slate-400 hover:border-sky-400 hover:text-sky-500 text-[15px]">
         <span class="text-xl leading-none">+</span>
         <span>Subir o arrastrar fotos</span>
         <input type="file" accept="image/*" multiple class="hidden" onchange="subirFotoCalidad(this, '${lineaId}', ${i})">
       </label>
       ${fotos.length
         ? `<div class="grid ${cols} gap-3 items-start">${minis}</div>`
-        : '<p class="text-[11px] text-slate-400 italic text-center py-2">Sin fotos cargadas.</p>'}
+        : '<p class="text-xs text-slate-400 italic text-center py-2">Sin fotos cargadas.</p>'}
     </div>`;
 }
 
@@ -198,19 +198,19 @@ function htmlTomaCalidad(lineaId, toma, i) {
         <!-- Separación entre "Toma N" y la Hora: ajustar el valor de "gap-6"
              (más chico = más pegado, más grande = más lejos. Ej: gap-2, gap-10). -->
         <div class="flex flex-wrap items-center gap-6">
-          <span class="text-xs font-black uppercase">Toma ${i + 1}${enviada ? ' · enviada' : ''}</span>
-          <label class="text-[10px] font-bold uppercase flex items-center gap-1">Hora
+          <span class="text-[13px] font-black uppercase">Toma ${i + 1}${enviada ? ' · enviada' : ''}</span>
+          <label class="text-[11px] font-bold uppercase flex items-center gap-1">Hora
             ${inputToma(lineaId, i, 'hora', 'time', toma.hora || '')}</label>
-          <label class="text-[10px] font-bold uppercase flex items-center gap-1" title="Cargá solo si en esta toma entra un producto nuevo">Producto
+          <label class="text-[11px] font-bold uppercase flex items-center gap-1" title="Cargá solo si en esta toma entra un producto nuevo">Producto
             <input type="text" value="${esc(toma.producto || '')}" placeholder="(cambio)"
-              class="text-xs text-slate-800 rounded px-2 py-0.5 w-36" onchange="onCambioCalidad(this)"
+              class="text-[13px] text-slate-800 rounded px-2 py-0.5 w-36" onchange="onCambioCalidad(this)"
               data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-sub="producto"></label>
-          <label class="text-[10px] font-bold uppercase flex items-center gap-1">Formato
+          <label class="text-[11px] font-bold uppercase flex items-center gap-1">Formato
             <input type="text" value="${esc(toma.formato || '')}" placeholder="(cambio)"
-              class="text-xs text-slate-800 rounded px-2 py-0.5 w-24" onchange="onCambioCalidad(this)"
+              class="text-[13px] text-slate-800 rounded px-2 py-0.5 w-24" onchange="onCambioCalidad(this)"
               data-cal-linea="${lineaId}" data-cal-toma="${i}" data-cal-sub="formato"></label>
         </div>
-        <button type="button" class="text-white/80 hover:text-white font-bold text-xs" title="Vaciar toma"
+        <button type="button" class="text-white/80 hover:text-white font-bold text-sm" title="Vaciar toma"
           onclick="quitarTomaCalidad('${lineaId}', ${i})">🗑</button>
       </div>
 
@@ -222,31 +222,31 @@ function htmlTomaCalidad(lineaId, toma, i) {
           <div class="space-y-3 min-w-0 lg:col-span-1">
             <!-- Mediciones apiladas en 2 columnas angostas -->
             <div class="grid grid-cols-2 gap-2">
-              <label class="text-[9px] font-black text-sky-700 uppercase">Calidad global %
+              <label class="text-[10px] font-black text-sky-700 uppercase">Calidad global %
                 ${inputToma(lineaId, i, 'global', 'number', toma.global, 'bg-sky-50', '', '0.01')}</label>
-              <label class="text-[9px] font-black text-emerald-700 uppercase">Calidad parcial %
+              <label class="text-[10px] font-black text-emerald-700 uppercase">Calidad parcial %
                 ${inputToma(lineaId, i, 'parcial1', 'number', toma.parcial1, 'bg-emerald-50', '', '0.01')}</label>
-              <label class="text-[9px] font-black text-slate-600 uppercase">Tono
+              <label class="text-[10px] font-black text-slate-600 uppercase">Tono
                 ${inputToma(lineaId, i, 'tono', 'number', toma.tono, '', 'nº', '1')}</label>
-              <label class="text-[9px] font-black text-slate-600 uppercase">M² clasificados
+              <label class="text-[10px] font-black text-slate-600 uppercase">M² clasificados
                 ${inputToma(lineaId, i, 'm2', 'number', toma.m2, '', 'm²', '1')}</label>
-              <label class="text-[9px] font-black text-slate-600 uppercase">Vacío horno (min)
+              <label class="text-[10px] font-black text-slate-600 uppercase">Vacío horno (min)
                 ${inputToma(lineaId, i, 'vacioHorno', 'number', toma.vacioHorno, '', 'min', '1')}</label>
-              <label class="text-[9px] font-black text-amber-700 uppercase">2da calidad %
+              <label class="text-[10px] font-black text-amber-700 uppercase">2da calidad %
                 ${inputToma(lineaId, i, 'segunda', 'number', toma.segunda, 'bg-amber-50', '', '0.01')}</label>
             </div>
 
             <!-- Defectos -->
             <div class="border border-rose-200 rounded p-2 bg-rose-50/40">
-              <div class="text-[10px] font-black text-rose-700 uppercase mb-1">Defectos de calidad</div>
+              <div class="text-[11px] font-black text-rose-700 uppercase mb-1">Defectos de calidad</div>
               <div>${htmlDefectos(lineaId, i, toma.defectos)}</div>
             </div>
 
             <!-- Rotura / descarte -->
             <div class="border border-orange-200 rounded p-2 bg-orange-50/40">
               <div class="flex items-center gap-2 mb-1">
-                <span class="text-[10px] font-black text-orange-700 uppercase">Rotura / descarte —</span>
-                <label class="text-[9px] font-bold text-orange-700 uppercase flex items-center gap-1">Total %
+                <span class="text-[11px] font-black text-orange-700 uppercase">Rotura / descarte —</span>
+                <label class="text-[10px] font-bold text-orange-700 uppercase flex items-center gap-1">Total %
                   ${inputToma(lineaId, i, 'rotura', 'number', toma.rotura, 'bg-orange-50 w-20', '', '0.01')}</label>
               </div>
               <div>${htmlRoturas(lineaId, i, toma.roturas)}</div>
@@ -254,20 +254,20 @@ function htmlTomaCalidad(lineaId, toma, i) {
 
             <!-- Acciones -->
             <div class="border border-emerald-200 rounded p-2 bg-emerald-50/40">
-              <div class="text-[10px] font-black text-emerald-700 uppercase mb-1">Acciones de calidad</div>
+              <div class="text-[11px] font-black text-emerald-700 uppercase mb-1">Acciones de calidad</div>
               <div>${htmlAcciones(lineaId, i, toma.acciones)}</div>
             </div>
           </div>
 
           <!-- COLUMNA DERECHA (~67%): fotos -->
           <div class="border border-slate-200 rounded p-2 bg-slate-50/60 lg:col-span-2">
-            <div class="text-[10px] font-black text-slate-600 uppercase mb-1">Fotos de defectos</div>
+            <div class="text-[11px] font-black text-slate-600 uppercase mb-1">Fotos de defectos</div>
             <div>${htmlFotos(lineaId, i, toma.fotos)}</div>
           </div>
         </div>
 
         <div class="text-right mt-3">
-          <button type="button" class="btn ${enviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-xs font-bold px-4 py-1.5 transition-colors shadow-xs"
+          <button type="button" class="btn ${enviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-[13px] font-bold px-4 py-1.5 transition-colors shadow-xs"
             onclick="enviarTomaCalidad('${lineaId}', ${i})">${enviada ? '✓ Enviada · actualizar' : 'Enviar datos'}</button>
         </div>
       </div>
@@ -309,15 +309,15 @@ export function renderPlanillaCalidadInline() {
   cont.innerHTML = `
     <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
       <div>
-        <h2 class="font-black text-sky-700 uppercase text-sm">Carga de calidad · ${esc(nombreLinea(lineaId))}</h2>
-        <p class="text-[11px] text-slate-500">Cada toma agrupa todo lo cargado en una hora. Se guarda solo; "Enviar datos" lo refleja en Vista de Planta. Cambiá de línea desde "Área monitoreada".</p>
+        <h2 class="font-black text-sky-700 uppercase text-[15px]">Carga de calidad · ${esc(nombreLinea(lineaId))}</h2>
+        <p class="text-xs text-slate-500">Cada toma agrupa todo lo cargado en una hora. Se guarda solo; "Enviar datos" lo refleja en Vista de Planta. Cambiá de línea desde "Área monitoreada".</p>
       </div>
       <div class="flex items-center gap-2.5 bg-slate-200/80 border border-slate-300 rounded-lg px-3.5 py-1.5 shadow-2xs" title="Objetivo fijado por Operario de Producción">
         <div class="text-right">
-          <div class="text-[10px] font-black uppercase tracking-wider text-slate-600">Objetivo Calidad</div>
-          <div class="text-[9px] text-sky-700 font-bold">Fijado por Producción</div>
+          <div class="text-[11px] font-black uppercase tracking-wider text-slate-600">Objetivo Calidad</div>
+          <div class="text-[10px] text-sky-700 font-bold">Fijado por Producción</div>
         </div>
-        <div class="bg-white border border-slate-300 rounded px-2.5 py-0.5 text-xl font-black text-slate-800 shadow-inner">
+        <div class="bg-white border border-slate-300 rounded px-2.5 py-0.5 text-[22px] font-black text-slate-800 shadow-inner">
           ${o.calidad != null ? o.calidad : 90}%
         </div>
       </div>
@@ -328,19 +328,19 @@ export function renderPlanillaCalidadInline() {
     </div>
 
     <div class="text-center mt-2">
-      <button type="button" class="btn bg-sky-600 text-white hover:bg-sky-700 text-xs px-4 py-1.5"
+      <button type="button" class="btn bg-sky-600 text-white hover:bg-sky-700 text-[13px] px-4 py-1.5"
         onclick="agregarTomaCalidad('${lineaId}')">+ Agregar toma</button>
     </div>
 
     <!-- Observaciones generales del turno (por línea) -->
     <div class="mt-4 border-2 border-slate-200 rounded-lg p-3 bg-slate-50/60">
       <div class="flex items-center justify-between mb-2">
-        <div class="text-xs font-black text-slate-600 uppercase">Observaciones del turno (Calidad)</div>
-        <button type="button" class="btn ${o.notaCalidadEnviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-[11px] font-bold px-3 py-1 transition-colors"
+        <div class="text-[13px] font-black text-slate-600 uppercase">Observaciones del turno (Calidad)</div>
+        <button type="button" class="btn ${o.notaCalidadEnviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-xs font-bold px-3 py-1 transition-colors"
           onclick="enviarObsCalidad('${lineaId}')">${o.notaCalidadEnviada ? '✓ Nota enviada' : 'Enviar nota'}</button>
       </div>
       <textarea id="obsCalidadTxt" rows="3" placeholder="Notas generales del turno: incidencias, tendencias, avisos para el próximo turno…"
-        class="field w-full text-sm p-2" onchange="onCambioObservacionesCalidad(this)"
+        class="field w-full text-[15px] p-2" onchange="onCambioObservacionesCalidad(this)"
         data-cal-linea="${lineaId}">${esc(o.observacionesCalidad || '')}</textarea>
     </div>`;
 }

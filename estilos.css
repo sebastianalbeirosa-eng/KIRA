@@ -1238,24 +1238,47 @@ body.modo-supervisor .asistente-panel {
   }
 }
 
-/* Filas de tabla de defectos ajustadas para que 6 defectos queden bien legibles y sin scroll */
+/* Contenedor y tabla de mapa de defectos: ocupan toda la altura del cuadro */
+#panelMapaDefectos {
+  display: flex;
+  flex-direction: column;
+}
+
+#contenedorTablaDefectos {
+  flex: 1;
+  height: 250px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+#contenedorTablaDefectos table {
+  width: 100%;
+  height: 100%;
+  border-collapse: collapse;
+}
+
+#tablaMapaDefectos {
+  height: 100%;
+}
+
+/* Distribución proporcional de filas: cuando hay pocos defectos, ocupan uniformemente todo el cuadro */
 #tablaMapaDefectos tr {
-  border-bottom: 1px solid #e2e8f0; /* Línea gris clara entre filas */
+  height: 1px; /* Permite que el navegador reparta la altura total entre las filas existentes */
+  border-bottom: 1px solid #e2e8f0;
 }
 
 #tablaMapaDefectos td {
   vertical-align: middle;
-  padding-top: 0.42rem;
-  padding-bottom: 0.42rem;
+  padding-top: 0.38rem;
+  padding-bottom: 0.38rem;
   padding-left: 0.5rem;
   padding-right: 0.5rem;
   line-height: 1.3;
-  border-bottom: inherit; /* Heredar el borde del tr */
+  border-bottom: inherit;
 }
 /* Tamaño exclusivo para la columna con el nombre del defecto */
 #tablaMapaDefectos td:nth-child(4) {
   font-size: 11px; /* Modificar acá el tamaño del texto del defecto */
-  
 }
 
 /* Aumentar tamaño de números en tabla de defectos */
@@ -1266,12 +1289,6 @@ body.modo-supervisor .asistente-panel {
 /* Aumentar tamaño de números de minutos en tabla de máquinas */
 #tablaMapaMaquinas .badge {
   font-size: 11px !important;
-}
-
-/* El gráfico de defectos conserva una altura fija para no desplazar
-   ni ocultar el mapa de calor cuando el grid se estira. */
-#panelEvolucionDefectos {
-  align-self: start;
 }
 
 #contenedorEvolucionDefectos {

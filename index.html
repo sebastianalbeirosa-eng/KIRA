@@ -286,7 +286,7 @@
           Mapa de calor de calidad — Defectos del turno
         </h2>
 
-        <div class="max-h-[22rem] overflow-y-auto">
+        <div id="contenedorTablaDefectos" class="max-h-[245px] overflow-y-auto">
         <table class="table w-auto text-xs text-slate-800">
           <thead>
             <tr>
@@ -306,7 +306,7 @@
 
       <div class="panel p-3">
         <h2 class="font-black text-rose-700 uppercase text-sm mb-2 flex items-center justify-between">
-          <span>Evolución hora a hora — Top 4 Defectos</span>
+          <span>Evolución hora a hora — Defectos de Calidad</span>
           <span class="text-[10px] font-normal text-slate-400 normal-case">(% de defectos por hora)</span>
         </h2>
         <div id="contenedorEvolucionDefectos" class="h-64 relative">
@@ -483,6 +483,9 @@
               <div id="fotosProduccionInline" class="hidden"></div>
               <span id="cantidadFotosProd" class="hidden">0</span>
             </div>
+
+            <!-- OBSERVACIONES DE PRODUCCIÓN (Al pie de página, debajo de Acciones Correctivas) -->
+            <div id="contenedorObsProduccionPie" class="panel p-3 border-2 border-slate-200 bg-slate-50/60" data-cap="cargarProduccion"></div>
           </div>
         </section>
 
@@ -1012,7 +1015,7 @@
     </svg>
   </button>
 
-  <aside id="panelAsistente" class="asistente-panel hidden" data-cap="verAsistente">
+  <aside id="panelAsistente" class="asistente-panel hidden">
     <header class="asistente-header">
       <div class="flex items-center gap-2">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
@@ -1599,6 +1602,8 @@
     </div>
   </div>
   
+  <!-- Cliente Socket.io para sincronización en tiempo real entre pantallas de planta -->
+  <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="src/app.js"></script>
   <script src="src/nucleo/bloqueo.js"></script>
 </body>

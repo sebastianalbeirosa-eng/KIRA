@@ -48,6 +48,24 @@ export function recargarDB() {
 export const SYNC_BLOQUE_KEY = 'kira_sync_bloque';
 const canalKira = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kira_sync') : null;
 
+// Conexión WebSockets para sincronizar múltiples terminales y pantallas de planta
+export let socketPlanta = null;
+if (typeof window !== 'undefined' && typeof window.io === 'function') {
+  try {
+    socketPlanta = window.io();
+    socketPlanta.on('cambio_planta', (data) => {
+      // Recargar datos en memoria y emitir sincronización interna
+      recargarDB();
+      try {
+        canalKira?.postMessage({ tipo: 'sync_bloque', origen: data?.tipo || 'socket', timestamp: Date.now() });
+      } catch {}
+      window.dispatchEvent(new CustomEvent('kira_sync_remoto', { detail: data }));
+    });
+  } catch (err) {
+    console.warn('[Almacenamiento] WebSockets no disponibles:', err.message);
+  }
+}
+
 /**
  * Guarda el estado actual de "db" en localStorage (persistencia silenciosa).
  * Se llama tras cualquier cambio para no perder datos en borrador.
@@ -69,6 +87,11 @@ export function emitirSincronizacionBloque(origen = '') {
   } catch {}
   try {
     canalKira?.postMessage({ tipo: 'sync_bloque', origen, timestamp });
+  } catch {}
+  try {
+    if (socketPlanta && socketPlanta.connected) {
+      socketPlanta.emit('cambio_planta', { tipo: 'sync_bloque', origen, timestamp });
+    }
   } catch {}
 }
 

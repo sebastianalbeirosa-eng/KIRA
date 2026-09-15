@@ -252,8 +252,11 @@ export function renderMaquinas() {
   const linea = valor('lineaVista');
   const lineas = linea === 'TODAS' ? lineasActivas().map(l => l.id) : [linea];
   const s = sesion();
+  asegurarObjetivosSesion(s);
   asegurarProduccionSesion(s);
-  document.getElementById('maquinas').innerHTML = lineas.map(l => {
+  const contMaquinas = document.getElementById('maquinas');
+  if (!contMaquinas) return;
+  contMaquinas.innerHTML = lineas.map(l => {
     const lineaConfig = lineaPorId(l);
     if (!lineaConfig) return '';
     const baseEquips = equiposDelArea(lineaConfig.equipos.filter(e => e.activo !== false));
@@ -269,43 +272,90 @@ export function renderMaquinas() {
         }
         return cleanX === eqBase;
       });
-      const mins = regs.reduce((a, x) => a + x.minutos, 0);
-      const vacio = regs.reduce((a, x) => a + x.vacio, 0);
-      const clase = mins > 40 ? 'critical' : mins > 15 ? 'warn' : '';
-      const estado = mins > 40 ? 'DETENCIÓN CRÍTICA' : mins > 15 ? 'EN ADVERTENCIA' : 'OPERATIVO';
+      const mins = regs.reduce((a, x) => a + (Number(x.minutos) || 0), 0);
+      const vacio = regs.reduce((a, x) => a + (Number(x.vacio) || 0), 0);
+      const objParadas = Number(s.objetivos?.porLinea?.[l]?.paradasMax) || 60;
+      const umbralCritico = Math.max(1, objParadas);
+      const umbralWarn = Math.max(1, Math.round(objParadas * 0.5));
+
+      const objVacio = Number(s.objetivos?.porLinea?.[l]?.vacioMax) || 30;
+      const umbralVacioCritico = Math.max(1, objVacio);
+      const umbralVacioWarn = Math.max(1, Math.round(objVacio * 0.5));
+
+      const esCritico = mins >= umbralCritico || vacio >= umbralVacioCritico;
+      const esWarn = !esCritico && (mins >= umbralWarn || vacio >= umbralVacioWarn);
+
+      const clase = esCritico ? 'critical' : esWarn ? 'warn' : '';
+      const estado = esCritico ? 'DETENCIÓN CRÍTICA' : esWarn ? 'EN ADVERTENCIA' : 'OPERATIVO';
 
       return `
         <button class="machine ${clase}" onclick="abrirGestionEquipo('${l}', '${encodeURIComponent(eqBase)}', '${eqConfig.id}')">
           <div class="flex justify-between items-start gap-2">
-            <span class="text-[8px] font-black text-slate-400">EQ-${String(idx + 1).padStart(2, '0')}</span>
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">EQ-${String(idx + 1).padStart(2, '0')}</span>
             <span class="status-dot"></span>
           </div>
-          <div class="font-black text-[11px] mt-1 min-h-[30px]">${esc(eqBase)}</div>
-          <div class="border-t border-slate-200 mt-1 pt-1 grid grid-cols-2 gap-1">
-            <div><span class="block text-[7px] font-bold text-slate-400">PARADA</span><b class="text-sm">${mins}</b><small> min</small></div>
-            <div><span class="block text-[7px] font-bold text-slate-400">VACÍO</span><b class="text-sm text-sky-700">${vacio}</b><small> min</small></div>
+          <div class="font-black text-[13px] mt-1.5 min-h-[40px] leading-snug text-slate-800">${esc(eqBase)}</div>
+          <div class="border border-slate-200 mt-2 p-1.5 grid grid-cols-2 gap-1.5 bg-slate-50/90 rounded">
+            <div>
+              <span class="block text-[8px] font-black text-slate-400 uppercase tracking-wider">PARADA</span>
+              <div class="flex items-baseline gap-0.5">
+                <b class="text-base font-black text-slate-900">${mins}</b>
+                <span class="text-[10px] font-bold text-slate-500">min</span>
+              </div>
+            </div>
+            <div>
+              <span class="block text-[8px] font-black text-slate-400 uppercase tracking-wider">VACÍO</span>
+              <div class="flex items-baseline gap-0.5">
+                <b class="text-base font-black text-sky-700">${vacio}</b>
+                <span class="text-[10px] font-bold text-slate-500">min</span>
+              </div>
+            </div>
           </div>
-          <div class="text-[7px] font-black mt-1 ${clase === 'critical' ? 'text-rose-700' : clase === 'warn' ? 'text-amber-700' : 'text-emerald-700'}">${estado}</div>
+          <div class="text-[8px] font-black mt-2 pt-0.5 tracking-wider uppercase ${esCritico ? 'text-rose-700 font-extrabold' : esWarn ? 'text-amber-700 font-extrabold' : 'text-emerald-700'}">${estado}</div>
         </button>
       `;
     }).join('');
 
     const paradasLinea = s.paradas.filter(x => x.linea === l);
     const total = paradasLinea.reduce((a, x) => a + x.minutos, 0);
+    const totalVacio = paradasLinea.reduce((a, x) => a + (Number(x.vacio) || 0), 0);
 
     return `
       <section class="scada-line mb-3">
-        <div class="line-caption flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-3">
-            <span class="font-black text-slate-800 text-sm tracking-wide">${esc(lineaConfig.nombre)}</span>
+        <div class="line-caption flex flex-wrap items-center justify-between gap-3 px-3 py-1.5 mb-1">
+          <span class="font-black text-slate-800 text-sm tracking-wide">${esc(lineaConfig.nombre)}</span>
+
+          <div class="flex items-center gap-3 mr-2">
+            <div class="inline-flex items-center gap-2 bg-slate-100 border border-slate-300 rounded-md px-3 py-1.5 shadow-2xs">
+              <span class="text-[11px] font-black uppercase tracking-wider text-slate-600">Tiempo detenido</span>
+              <span class="text-sm font-black text-slate-900">${total} min</span>
+            </div>
+
+            <div class="inline-flex items-center gap-2 bg-sky-50 border border-sky-300 rounded-md px-3 py-1.5 shadow-2xs">
+              <span class="text-[11px] font-black uppercase tracking-wider text-sky-800">Vacíos acumulados</span>
+              <span class="text-sm font-black text-sky-700">${totalVacio} min</span>
+            </div>
           </div>
-          <span class="text-xs text-slate-500 font-semibold">Tiempo detenido: <b class="text-slate-800">${total} min</b></span>
         </div>
-        <div class="process-track">${bloques}</div>
+        <div class="relative group/sinoptico">
+          <button type="button" class="sinoptico-nav-btn sinoptico-nav-prev" onclick="desplazarSinoptico(this, -300)" title="Desplazar a la izquierda" aria-label="Desplazar a la izquierda">‹</button>
+          <div class="process-track">${bloques}</div>
+          <button type="button" class="sinoptico-nav-btn sinoptico-nav-next" onclick="desplazarSinoptico(this, 300)" title="Desplazar a la derecha" aria-label="Desplazar a la derecha">›</button>
+        </div>
       </section>
     `;
   }).join('');
 }
+
+/** Desplaza horizontalmente el carrusel de máquinas del sinóptico. */
+export function desplazarSinoptico(btn, distancia) {
+  const wrapper = btn.closest('.group\\/sinoptico') || btn.parentElement;
+  const track = wrapper?.querySelector('.process-track');
+  if (track) {
+    track.scrollBy({ left: distancia, behavior: 'smooth' });
+  }
+}
+window.desplazarSinoptico = desplazarSinoptico;
 
 /** Dibuja la lista de acciones correctivas recientes del turno. */
 export function renderAcciones() {
@@ -353,15 +403,20 @@ export function renderAcciones() {
 
 /** Refresca el dashboard operativo (máquinas + acciones + defectos). */
 export function renderTodo() {
-  renderMaquinas();
-  renderAcciones();
-  renderDefectos();
+  try { renderMaquinas(); } catch (err) { console.error('Error en renderMaquinas:', err); }
+  try { renderAcciones(); } catch (err) { console.error('Error en renderAcciones:', err); }
+  try { renderDefectos(); } catch (err) { console.error('Error en renderDefectos:', err); }
   // Paneles embebidos por rol (se dibujan solo si su contenedor existe; el
   // otro rol lo tiene oculto por data-cap). Van acá para refrescarse al
   // cambiar de línea en "Área monitoreada".
   const area = areaDelRol();
-  if (area === 'calidad') renderPlanillaCalidadInline();
-  if (area !== 'calidad') { renderProduccionInline(); renderFotosProduccion(); }
+  if (area === 'calidad') {
+    try { renderPlanillaCalidadInline(); } catch (err) { console.error('Error en renderPlanillaCalidadInline:', err); }
+  }
+  if (area !== 'calidad') {
+    try { renderProduccionInline(); } catch (err) { console.error('Error en renderProduccionInline:', err); }
+    try { renderFotosProduccion(); } catch (err) { console.error('Error en renderFotosProduccion:', err); }
+  }
 }
 
 /** Clasifica un valor numérico en un nivel de criticidad (bajo/medio/alto/crítico) según umbrales dados. */
@@ -610,11 +665,11 @@ export function calcularKpisPlanta(l) {
   for (const lc of lineasIter) {
     const o = s.objetivos?.porLinea?.[lc.id];
     if (!o) continue;
-    // Quemado: última lectura con valor > 0 (por hora).
-    const lq = (o.lecturasQuemado || []).filter(x => Number(x?.quemados) > 0);
+    // Quemado: última lectura con valor > 0 (por hora). Soporta .real y .quemados por compatibilidad.
+    const lq = (o.lecturasQuemado || []).filter(x => (Number(x?.real) > 0 || Number(x?.quemados) > 0));
     if (lq.length) {
       const u = lq[lq.length - 1];
-      quemadoVal = Number(u.quemados);
+      quemadoVal = Number(u.real ?? u.quemados);
       quemadoHora = u.hora || '';
     }
     // Clasificados / Rotura / Tono: de la última toma de calidad enviada
@@ -1988,17 +2043,25 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
         ctx.font = '13px sans-serif';
         ctx.fillStyle = '#94a3b8';
         ctx.textAlign = 'center';
-        ctx.fillText('Sin defectos registrados en el Top 4', canvas.width / 2, canvas.height / 2);
+        ctx.fillText('Sin defectos registrados en el turno', canvas.width / 2, canvas.height / 2);
       }
       return;
     }
 
     console.log('Datasets construidos:', datasets);
 
-    // Determinar rango simétrico alrededor de la referencia (1%):
-    // La referencia queda en el medio visual del eje Y (igual que en los
-    // gráficos de Calidad Global y Calidad Parcial).
-    const refDefectos = 1.0;
+    // Determinar objetivo/referencia de defectos (fijado por producción, default 1.0%):
+    let refDefectos = 1.0;
+    if (lineaSeleccionada !== 'TODAS' && s.objetivos?.porLinea?.[lineaSeleccionada]?.defectoMax != null) {
+      refDefectos = Number(s.objetivos.porLinea[lineaSeleccionada].defectoMax) || 1.0;
+    } else if (lineaUsada && s.objetivos?.porLinea?.[lineaUsada]?.defectoMax != null) {
+      refDefectos = Number(s.objetivos.porLinea[lineaUsada].defectoMax) || 1.0;
+    } else {
+      const lin = lineasActivas()[0]?.id;
+      if (lin && s.objetivos?.porLinea?.[lin]?.defectoMax != null) {
+        refDefectos = Number(s.objetivos.porLinea[lin].defectoMax) || 1.0;
+      }
+    }
     const todosLosValores = datasets.flatMap(d => d.data).filter(v => v !== null && v !== undefined);
     let yMinDef = 0;
     let yMaxDef = 2.0;
@@ -2171,11 +2234,11 @@ function renderizarGraficoEvolucionDefectos(lineaSeleccionada, defectos, s) {
           ctx.stroke();
           ctx.restore();
 
-          // Etiqueta de la referencia
+          // Etiqueta del objetivo
           ctx.fillStyle = 'rgb(100, 116, 139)';
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'right';
-          ctx.fillText(`Ref. ${refDefectos}%`, xEnd - 5, yPixel - 4);
+          ctx.fillText(`Obj. ${refDefectos}%`, xEnd - 5, yPixel - 4);
         }
       }, {
         // Muestra la abreviatura del defecto + porcentaje (y delta si cambió) en cada punto

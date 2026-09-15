@@ -125,6 +125,8 @@ function actualizarTiempoBloqueo() {
   document.getElementById('tiempoBloqueo').textContent = texto;
 }
 
+window.actualizarTiempoBloqueo = actualizarTiempoBloqueo;
+
 // ==========================================================
 // IMPORTS DE EFECTO SECUNDARIO (SIN LLAVES)
 // ----------------------------------------------------------
@@ -198,6 +200,7 @@ export function aplicarPermisosMenu() {
   //    esa capacidad. Sirve para separar la carga de datos (calidad vs
   //    producción) dentro de una misma pestaña.
   document.querySelectorAll('[data-cap]').forEach(el => {
+    if (el.id === 'panelAsistente') return; // El panel de chat se abre SOLO con clic explícito en la burbuja
     const cap = el.getAttribute('data-cap');
     el.classList.toggle('hidden', !permisos.caps[cap]);
   });
@@ -222,6 +225,9 @@ export function aplicarPermisosMenu() {
       panelAsist.style.setProperty('display', 'none', 'important');
     } else {
       panelAsist.style.removeProperty('display');
+      if (!window.__asistenteAbiertoManualmente) {
+        panelAsist.classList.add('hidden');
+      }
     }
   }
 
@@ -229,7 +235,7 @@ export function aplicarPermisosMenu() {
   // El operario de calidad (y admin) pueden cargar y editar.
   // Los demás logins (producción, supervisor) los visualizan en modo lectura en todas las vistas de planta.
   const puedeCargarCal = puede('cargarCalidad');
-  ['operarioCalidad', 'productoCabecera', 'formatoCabecera'].forEach(id => {
+  ['supervisor', 'operarioCalidad', 'productoCabecera', 'formatoCabecera'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (puedeCargarCal) {
@@ -477,6 +483,38 @@ window.addEventListener('load', () => {
 // ==========================================================
 function sincronizarVistasEnVivo() {
   recargarDB();
+  const s = sesion();
+
+  // Actualizar campos de la cabecera en pantalla si no tienen el foco activo
+  const supEl = document.getElementById('supervisor');
+  if (supEl && s.supervisor !== undefined && document.activeElement !== supEl) {
+    supEl.value = s.supervisor || '';
+  }
+  const opCalEl = document.getElementById('operarioCalidad');
+  if (opCalEl && s.operarioCalidad !== undefined && document.activeElement !== opCalEl) {
+    opCalEl.value = s.operarioCalidad || '';
+  }
+  const prodEl = document.getElementById('productoCabecera');
+  if (prodEl && s.productoCalidad !== undefined && document.activeElement !== prodEl) {
+    prodEl.value = s.productoCalidad || '';
+  }
+  const fmtEl = document.getElementById('formatoCabecera');
+  if (fmtEl && s.formatoCalidad !== undefined && document.activeElement !== fmtEl) {
+    fmtEl.value = s.formatoCalidad || '';
+  }
+  const fechaEl = document.getElementById('fecha');
+  if (fechaEl && s.fecha && document.activeElement !== fechaEl) {
+    fechaEl.value = s.fecha;
+  }
+  const turnoEl = document.getElementById('turno');
+  if (turnoEl && s.turno && document.activeElement !== turnoEl) {
+    turnoEl.value = s.turno;
+  }
+
+  if (typeof cargarCabeceraCalidad === 'function') {
+    cargarCabeceraCalidad();
+  }
+
   if (typeof renderVistaPlanta === 'function' && !document.getElementById('vistaPlanta')?.classList.contains('hidden')) {
     renderVistaPlanta();
   }
@@ -501,6 +539,11 @@ if (typeof BroadcastChannel !== 'undefined') {
     });
   } catch {}
 }
+
+// Sincronización en tiempo real vía WebSockets entre distintas computadoras de planta
+window.addEventListener('kira_sync_remoto', () => {
+  sincronizarVistasEnVivo();
+});
 
 // ==========================================================
 // EXPOSICIÓN A window

@@ -190,13 +190,13 @@ button:not(.sidebar-toggle), .btn:not(.sidebar-toggle) {
   transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }
 
-button:not(.sidebar-toggle):hover, .btn:not(.sidebar-toggle):hover {
+button:not(.sidebar-toggle):not(.sinoptico-nav-btn):hover, .btn:not(.sidebar-toggle):not(.sinoptico-nav-btn):hover {
   filter: brightness(1.12);
   transform: translateY(-1px);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.12), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-button:not(.sidebar-toggle):active, .btn:not(.sidebar-toggle):active {
+button:not(.sidebar-toggle):not(.sinoptico-nav-btn):active, .btn:not(.sidebar-toggle):not(.sinoptico-nav-btn):active {
   transform: translateY(0) scale(0.98);
   filter: brightness(0.95);
   box-shadow: none;
@@ -272,30 +272,63 @@ select:focus, select.field:focus, .field[type="date"]:focus, .field[type="time"]
   display: flex; 
   align-items: stretch; 
   gap: 18px; 
-  padding: 12px; 
+  padding: 14px 36px; 
   overflow-x: auto; 
+  scroll-behavior: smooth;
+  /* Barra de scroll lateral más visible y grande */
+  scrollbar-width: auto;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+.process-track::-webkit-scrollbar {
+  height: 12px;
+}
+
+.process-track::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 6px;
+}
+
+.process-track::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+
+.process-track::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .machine { 
   position: relative; 
-  min-width: 132px; 
-  width: 132px; 
+  min-width: 148px; 
+  width: 148px; 
+  min-height: 146px;
   background: #fff; 
-  border: 1px solid #aebdca; 
-  border-top: 4px solid #15965a; 
-  border-radius: 3px; 
+  border: 1px solid #cbd5e1; 
+  border-top: 6px solid #15965a; 
+  border-radius: 6px; 
   color: #142033; 
   text-align: left; 
-  box-shadow: 0 1px 2px rgba(16,40,64,.08); 
+  box-shadow: 0 1px 3px rgba(16,40,64,.08); 
   cursor: pointer; 
-  padding: 8px; 
+  padding: 10px 10px 8px 10px; 
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.machine:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
 }
 
 .machine:not(:last-child)::after { 
   content: ""; 
   position: absolute; 
   right: -19px; 
-  top: 47%; 
+  top: 50%; 
   width: 18px; 
   height: 2px; 
   background: #7f93a6; 
@@ -305,19 +338,60 @@ select:focus, select.field:focus, .field[type="date"]:focus, .field[type="time"]
   content: ""; 
   position: absolute; 
   right: -19px; 
-  top: calc(47% - 3px); 
+  top: calc(50% - 3px); 
   border-left: 6px solid #7f93a6; 
   border-top: 4px solid transparent; 
   border-bottom: 4px solid transparent; 
   z-index: 2; 
 }
 
+.sinoptico-nav-btn,
+.sinoptico-nav-btn:hover,
+.sinoptico-nav-btn:focus,
+.sinoptico-nav-btn:active {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) !important;
+  z-index: 20;
+  width: 28px;
+  height: 58px;
+  background: rgba(30, 41, 59, 0.85) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  filter: none !important;
+  backdrop-filter: blur(4px);
+  user-select: none;
+  transition: none !important;
+}
+
+.sinoptico-nav-prev {
+  left: 0;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.sinoptico-nav-next {
+  right: 0;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
 .machine.warn { 
   border-top-color: #e7a318; 
+  border-top-width: 6px;
 }
 
 .machine.critical { 
   border-top-color: #d93b45; 
+  border-top-width: 6px;
   background: #fff8f8; 
 }
 
@@ -1164,20 +1238,25 @@ body.modo-supervisor .asistente-panel {
   }
 }
 
-/* Ajustar filas de tabla de defectos para que ocupen toda la altura */
+/* Filas de tabla de defectos ajustadas para que 6 defectos queden bien legibles y sin scroll */
 #tablaMapaDefectos tr {
-  height: 1px; /* Truco para que todas las filas sean iguales */
   border-bottom: 1px solid #e2e8f0; /* Línea gris clara entre filas */
 }
 
 #tablaMapaDefectos td {
   vertical-align: middle;
-  padding-top: 1rem;
-  padding-bottom: 1rem;
+  padding-top: 0.42rem;
+  padding-bottom: 0.42rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  line-height: 1.3;
   border-bottom: inherit; /* Heredar el borde del tr */
 }
-
-
+/* Tamaño exclusivo para la columna con el nombre del defecto */
+#tablaMapaDefectos td:nth-child(4) {
+  font-size: 11px; /* Modificar acá el tamaño del texto del defecto */
+  
+}
 
 /* Aumentar tamaño de números en tabla de defectos */
 #tablaMapaDefectos .badge {

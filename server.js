@@ -1,73 +1,72 @@
+/* ========================================================== */
+/* KIRA INDUSTRIAL PLATFORM — SERVIDOR PRINCIPAL (EXPRESS)    */
+/* ========================================================== */
+
+import http from 'http';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+import { CONFIGURACION } from './servidor/configuracion/entorno.js';
+import { conectarSQLServer } from './servidor/base-de-datos/conexion.js';
+import { iniciarWebSockets } from './servidor/tiempo-real/plantaSocket.js';
+import routerAutenticacion from './servidor/rutas/autenticacion.js';
+import routerTurnos from './servidor/rutas/turnos.js';
+import routerCalidad from './servidor/rutas/calidad.js';
+import routerParadas from './servidor/rutas/paradas.js';
+import routerIA from './servidor/rutas/ia.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PUERTO = CONFIGURACION.puerto || 3000;
 
+// Servidor HTTP base para Express y Socket.io
+const servidorHttp = http.createServer(app);
+
+// Inicializar WebSockets para tiempo real en planta
+iniciarWebSockets(servidorHttp);
+
+// Middleware para procesar cuerpos JSON (hasta 10MB para datos o fotos de planta)
 app.use(express.json({ limit: '10mb' }));
 
-// Health check endpoint
+// 1. Ruta de verificación de salud del servidor
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ 
+    estado: 'ok', 
+    sistema: 'KIRA Industrial Platform',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Gemini status check
-app.get('/api/gemini/status', (req, res) => {
-  res.json({ configured: Boolean(process.env.GEMINI_API_KEY) });
-});
+// 2. Rutas de la API de KIRA
+app.use('/api/auth', routerAutenticacion);
+app.use('/api/turnos', routerTurnos);
+app.use('/api/calidad', routerCalidad);
+app.use('/api/paradas', routerParadas);
+app.use('/api/gemini', routerIA);
 
-// Server-side Gemini API proxy
-app.post('/api/gemini', async (req, res) => {
-  const { prompt, model, systemInstruction, apiKey: clientKey } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY || clientKey;
-
-  if (!apiKey) {
-    return res.status(400).json({ error: 'No se encontró la clave de API de Gemini en el servidor ni en la petición.' });
-  }
-
-  const selectedModel = model || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const bodyPayload = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.4, maxOutputTokens: 800 }
-  };
-
-  if (systemInstruction) {
-    bodyPayload.system_instruction = { parts: [{ text: systemInstruction }] };
-  }
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyPayload)
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json(data);
-    }
-
-    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-    return res.json({ text });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || 'Error al comunicarse con Gemini' });
-  }
-});
-
-// Serve static assets
+// 3. Servir archivos estáticos del frontend (HTML, CSS, JS, Vendor)
 app.use(express.static(__dirname));
 
-// Default fallback to index.html
+// 4. Redirección por defecto a index.html para rutas no encontradas
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`KIRA server running on http://0.0.0.0:${PORT}`);
+// Iniciar servidor escuchando en todas las interfaces de red para acceso en planta
+servidorHttp.listen(PUERTO, '0.0.0.0', async () => {
+  console.log(`=======================================================`);
+  console.log(`🚀 KIRA Server corriendo en http://0.0.0.0:${PUERTO}`);
+  console.log(`📁 Modo: Backend Modular Node.js Express + WebSockets`);
+  console.log(`🔒 Seguridad: Contraseñas encriptadas con PBKDF2-SHA512`);
+  
+  // Intentar conectar a Microsoft SQL Server (o activar modo local si IT aún no configuró credenciales)
+  await conectarSQLServer();
+  
+  console.log(`=======================================================`);
 });
+
+export { app, servidorHttp };
+export default app;

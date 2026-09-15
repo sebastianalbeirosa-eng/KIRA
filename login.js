@@ -98,7 +98,7 @@ function guardarSesion(usuario, recordar) {
 }
 
 // Manejar envío del formulario
-document.getElementById('loginForm')?.addEventListener('submit', function(e) {
+document.getElementById('loginForm')?.addEventListener('submit', async function(e) {
   e.preventDefault();
   
   const username = document.getElementById('username').value.trim();
@@ -111,7 +111,36 @@ document.getElementById('loginForm')?.addEventListener('submit', function(e) {
     return;
   }
   
-  // Validar credenciales
+  // 1. Intentar autenticar contra el backend seguro en Node.js
+  try {
+    const respuesta = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: username, password })
+    });
+
+    if (respuesta.ok) {
+      const data = await respuesta.json();
+      if (data.exito && data.usuario) {
+        if (data.token) {
+          sessionStorage.setItem('kiraToken', data.token);
+          if (rememberMe) localStorage.setItem('kiraToken', data.token);
+        }
+        guardarSesion(data.usuario, rememberMe);
+        window.location.href = 'index.html';
+        return;
+      }
+    } else if (respuesta.status === 401 || respuesta.status === 400) {
+      const errorData = await respuesta.json().catch(() => ({}));
+      mostrarError(errorData.mensaje || 'Usuario o contraseña incorrectos');
+      return;
+    }
+  } catch (errServidor) {
+    // Si el servidor Node.js no está corriendo o hay falla de red, recurrir a validación local
+    console.warn('Servidor de autenticación no disponible, usando validación local de respaldo:', errServidor);
+  }
+
+  // 2. Respaldo local de emergencia
   const resultado = validarCredenciales(username, password);
   
   if (!resultado.exito) {

@@ -33,7 +33,8 @@ import { esc, valor } from '../nucleo/utilidades.js';
 import { persistir, emitirSincronizacionBloque } from '../nucleo/almacenamiento.js';
 import { mostrarAlertaKira } from '../nucleo/alertasKira.js';
 import {
-  sesion, lineasActivas, lineaPorId, nombreLinea, asegurarObjetivosSesion
+  sesion, lineasActivas, lineaPorId, nombreLinea, asegurarObjetivosSesion,
+  guardarObjetivosPredeterminados, obtenerObjetivosPredeterminados
 } from '../nucleo/estado.js';
 import { nivelPorValor, UMBRAL_DEFECTO } from './vistaDePlanta.js';
 import { ultimaTomaEnviada } from './cargaCalidad.js';
@@ -64,29 +65,73 @@ function htmlObjetivosQuemado(lineaId, o) {
     : [{ hora: '', real: 0 }, { hora: '', real: 0 }, { hora: '', real: 0 }];
   return `
     <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-3">
-      <!-- Objetivos: compactos, label a la izquierda + input al lado con separación ajustada -->
+      <!-- Objetivos: compactos, uniforme, label a la izquierda + input centrado -->
       <div class="space-y-2">
-        <div class="text-[10px] font-black text-slate-500 uppercase">Objetivos del turno</div>
-        <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600">
-          <span class="w-28 shrink-0">Vacío horno (min)</span>
-          <input id="prodObjVacioMax" type="number" step="1" min="0" value="${o.vacioMax != null ? o.vacioMax : ''}" class="field text-sm p-1 w-20 text-center"
-            onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="vacioMax"></label>
-        <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600">
-          <span class="w-28 shrink-0">Paradas (min)</span>
-          <input id="prodObjParadasMax" type="number" step="1" min="0" value="${o.paradasMax != null ? o.paradasMax : ''}" class="field text-sm p-1 w-20 text-center"
-            onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="paradasMax"></label>
+        <div class="flex items-center justify-between">
+          <div class="text-[12px] font-black text-slate-500 uppercase">Objetivos de Planta</div>
+          <span class="text-[10px] text-slate-400 font-semibold">Producción</span>
+        </div>
+
+        <div class="space-y-2">
+          <label class="flex items-center justify-between gap-2 text-sm font-bold text-slate-700">
+            <span>Minutos de vacío</span>
+            <div class="flex items-center gap-1 shrink-0">
+              <input id="prodObjVacioMax" type="number" step="1" min="0" value="${o.vacioMax != null ? o.vacioMax : ''}" placeholder="30"
+                class="field text-sm p-1 w-24 text-center font-bold text-slate-900"
+                onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="vacioMax">
+              <span class="text-[11px] font-bold text-slate-400 w-6">min</span>
+            </div>
+          </label>
+
+          <label class="flex items-center justify-between gap-2 text-sm font-bold text-slate-700">
+            <span>Minutos de paradas</span>
+            <div class="flex items-center gap-1 shrink-0">
+              <input id="prodObjParadasMax" type="number" step="1" min="0" value="${o.paradasMax != null ? o.paradasMax : ''}" placeholder="60"
+                class="field text-sm p-1 w-24 text-center font-bold text-slate-900"
+                onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="paradasMax">
+              <span class="text-[10px] font-bold text-slate-400 w-6">min</span>
+            </div>
+          </label>
+
+          <label class="flex items-center justify-between gap-2 text-sm font-bold text-slate-700">
+            <span>Objetivo de calidad</span>
+            <div class="flex items-center gap-1 shrink-0">
+              <input id="prodObjCalidadMin" type="number" step="0.1" min="0" max="100" value="${o.calidad != null ? o.calidad : 90}" placeholder="90"
+                class="field text-sm p-1 w-24 text-center font-bold text-slate-900"
+                onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="calidad">
+              <span class="text-[10px] font-bold text-slate-400 w-6">%</span>
+            </div>
+          </label>
+
+          <label class="flex items-center justify-between gap-2 text-sm font-bold text-slate-700">
+            <span>Objetivo de defectos</span>
+            <div class="flex items-center gap-1 shrink-0">
+              <input id="prodObjDefectoMax" type="number" step="0.1" min="0" max="100" value="${o.defectoMax != null ? o.defectoMax : 1.0}" placeholder="1.0"
+                class="field text-sm p-1 w-24 text-center font-bold text-slate-900"
+                onchange="onCambioObjetivoProd(this)" data-prod-linea="${lineaId}" data-prod-campo="defectoMax">
+              <span class="text-[10px] font-bold text-slate-400 w-6">%</span>
+            </div>
+          </label>
+        </div>
+
+        <button type="button" class="w-full mt-2 btn ${o.objetivosEstablecidos ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-[12px] font-bold py-1.5 px-2 rounded flex items-center justify-center shadow transition-colors"
+          onclick="establecerObjetivosProd('${lineaId}')" title="Fija estos objetivos para este turno y todos los turnos futuros">
+          ${o.objetivosEstablecidos ? '✓ Objetivos establecidos' : 'Establecer objetivos'}
+        </button>
       </div>
 
       <div class="pt-2 border-t border-slate-200">
-        <div class="text-[10px] font-black text-slate-500 uppercase mb-1.5">m² quemados (hora a hora)</div>
+        <div class="text-[12px] font-black text-slate-500 uppercase mb-1.5">m² quemados (hora a hora)</div>
         <div class="space-y-1.5">
           ${tomas.map((t, i) => `
-            <label class="flex items-center gap-2 text-[11px] font-bold text-slate-600">
-              <span class="w-14 text-slate-400">Toma ${i + 1}</span>
-              <input type="time" value="${esc(t.hora || '')}" class="field text-sm p-1 w-24"
-                onchange="onCambioQuemado(this)" data-prod-linea="${lineaId}" data-prod-toma="${i}" data-prod-sub="hora">
-              <input type="number" step="1" min="0" value="${numAttr(t.real)}" placeholder="m²" class="field text-sm p-1 w-20 text-center"
-                onchange="onCambioQuemado(this)" data-prod-linea="${lineaId}" data-prod-toma="${i}" data-prod-sub="real">
+            <label class="flex items-center justify-between gap-1 text-[12px] font-bold text-slate-600">
+              <span class="text-slate-400 shrink-0">Toma ${i + 1}</span>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <input type="time" value="${esc(t.hora || '')}" class="field text-sm p-1 w-24 text-center font-semibold"
+                  onchange="onCambioQuemado(this)" data-prod-linea="${lineaId}" data-prod-toma="${i}" data-prod-sub="hora" title="Hora toma ${i + 1}">
+                <input type="number" step="1" min="0" value="${numAttr(t.real)}" placeholder="m²" class="field text-sm p-1 w-24 text-center font-bold text-slate-900"
+                  onchange="onCambioQuemado(this)" data-prod-linea="${lineaId}" data-prod-toma="${i}" data-prod-sub="real" title="m² quemados toma ${i + 1}">
+              </div>
             </label>`).join('')}
         </div>
       </div>
@@ -179,38 +224,44 @@ export function renderProduccionInline() {
         </div>
         <p class="text-[11px] text-slate-500">Objetivos del turno, m² quemados y acciones frente a los defectos que envía calidad. Cambiá de línea desde "Área monitoreada".</p>
       </div>
-      <button type="button" class="btn ${o.accionesProdEnviadas ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-700 hover:bg-sky-800'} text-white text-xs px-4 py-1.5"
-        onclick="enviarProduccion('${lineaId}')">${o.accionesProdEnviadas ? '✓ Enviado · actualizar' : 'Enviar / actualizar datos'}</button>
+      <button type="button" class="btn ${o.accionesProdEnviadas ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-xs font-bold px-4 py-1.5 transition-colors shadow-xs"
+        onclick="enviarProduccion('${lineaId}')">${o.accionesProdEnviadas ? '✓ Enviado · actualizar' : 'Enviar datos'}</button>
     </div>
 
-    <!-- IZQUIERDA objetivos+quemado (compacto) · DERECHA respuesta a defectos (2 col) -->
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-      <div class="lg:col-span-1">
+    <!-- IZQUIERDA objetivos+quemado (compacto horizontalmente) · DERECHA respuesta a defectos -->
+    <div class="flex flex-col lg:flex-row items-start gap-4">
+      <div class="w-full lg:w-[320px] shrink-0">
         ${htmlObjetivosQuemado(lineaId, o)}
       </div>
-      <div class="lg:col-span-3">
-        <div class="text-[11px] font-black text-rose-700 uppercase mb-2">Respuesta a defectos de calidad</div>
+      <div class="flex-1 w-full min-w-0">
+        <div class="text-[14px] font-black text-rose-700 uppercase mb-2">Respuesta a defectos de calidad</div>
         ${htmlRespuestaDefectos(lineaId, o)}
       </div>
-    </div>
-
-    <!-- Observaciones de producción del turno (se reflejan en Vista de Planta) -->
-    <div class="mt-4 border-2 border-slate-200 rounded-lg p-3 bg-slate-50/60">
-      <div class="flex items-center justify-between mb-2">
-        <div class="text-xs font-black text-slate-600 uppercase">Observaciones de producción</div>
-        <button type="button" class="btn bg-slate-600 text-white hover:bg-slate-700 text-[11px] px-3 py-1"
-          onclick="enviarObsProduccion()">Enviar nota</button>
-      </div>
-      <textarea id="obsProduccionTxt" rows="2" placeholder="Ej: Se colocan prensas en 12,5 golpes para mejorar cargamento…"
-        class="field w-full text-sm p-2" onchange="onCambioObsProduccion(this)">${esc(sesion().notaTurno || '')}</textarea>
     </div>`;
+
+  renderObsProduccionPie();
+}
+
+/** Renderiza el bloque de observaciones de producción al pie de la página (debajo de Acciones Correctivas). */
+export function renderObsProduccionPie() {
+  const cont = document.getElementById('contenedorObsProduccionPie');
+  if (!cont) return;
+  const s = sesion();
+  cont.innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-xs font-black text-slate-600 uppercase">Observaciones de producción del turno</div>
+      <button type="button" class="btn ${s.notaProdEnviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-[11px] font-bold px-3 py-1 transition-colors shadow-xs"
+        onclick="enviarObsProduccion()">${s.notaProdEnviada ? '✓ Nota enviada' : 'Enviar nota'}</button>
+    </div>
+    <textarea id="obsProduccionTxt" rows="2" placeholder="Ej: Se colocan prensas en 12,5 golpes para mejorar cargamento…"
+      class="field w-full text-sm p-2" onchange="onCambioObsProduccion(this)">${esc(s.notaTurno || '')}</textarea>`;
 }
 
 // ----------------------------------------------------------
 // GUARDADO AUTOMÁTICO (onchange)
 // ----------------------------------------------------------
 
-/** Objetivo (vacioMax / paradasMax). */
+/** Objetivo (vacioMax / paradasMax / calidad / defectoMax). */
 export function onCambioObjetivoProd(el) {
   const lineaId = el.getAttribute('data-prod-linea');
   const campo = el.getAttribute('data-prod-campo');
@@ -218,6 +269,7 @@ export function onCambioObjetivoProd(el) {
   const o = objDe(lineaId);
   const n = numOrNull(el.value);
   o[campo] = n != null ? n : 0;
+  o.objetivosEstablecidos = false;
   persistir();
   if (typeof window.renderTodo === 'function') window.renderTodo();
 }
@@ -255,6 +307,7 @@ export function onCambioAccionProd(el) {
 export function onCambioObsProduccion(el) {
   const s = sesion();
   s.notaTurno = el.value;
+  s.notaProdEnviada = false;
   persistir();
 }
 
@@ -267,7 +320,9 @@ export function enviarObsProduccion() {
   }
   const el = document.getElementById('obsProduccionTxt');
   if (el) { s.notaTurno = el.value; }
+  s.notaProdEnviada = true;
   persistir();
+  renderObsProduccionPie();
   if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
   emitirSincronizacionBloque('enviarObsProduccion');
   mostrarAlertaKira('Nota de producción enviada. Aparece en Vista de Planta.', 'Producción', 'exito');
@@ -275,12 +330,47 @@ export function enviarObsProduccion() {
 
 /** Marca las acciones como enviadas y refresca Vista de Planta. */
 export function enviarProduccion(lineaId) {
+  const o = objDe(lineaId);
+
+  // Volcar inputs de quemado y objetivos del DOM para no depender de onchange previo
+  const inputsQuemado = document.querySelectorAll(`[data-prod-linea="${lineaId}"][data-prod-toma]`);
+  if (!Array.isArray(o.lecturasQuemado)) {
+    o.lecturasQuemado = [{ hora: '', real: 0 }, { hora: '', real: 0 }, { hora: '', real: 0 }];
+  }
+  inputsQuemado.forEach(inp => {
+    const ti = parseInt(inp.getAttribute('data-prod-toma'), 10);
+    const sub = inp.getAttribute('data-prod-sub');
+    if (!o.lecturasQuemado[ti]) o.lecturasQuemado[ti] = { hora: '', real: 0 };
+    if (sub === 'hora') o.lecturasQuemado[ti].hora = inp.value.trim();
+    else if (sub === 'real') o.lecturasQuemado[ti].real = numOrNull(inp.value) || 0;
+  });
+
+  const inpVacio = document.getElementById('prodObjVacioMax');
+  if (inpVacio && inpVacio.getAttribute('data-prod-linea') === lineaId) {
+    const v = numOrNull(inpVacio.value);
+    if (v != null) o.vacioMax = v;
+  }
+  const inpParadas = document.getElementById('prodObjParadasMax');
+  if (inpParadas && inpParadas.getAttribute('data-prod-linea') === lineaId) {
+    const p = numOrNull(inpParadas.value);
+    if (p != null) o.paradasMax = p;
+  }
+  const inpCalidad = document.getElementById('prodObjCalidadMin');
+  if (inpCalidad && inpCalidad.getAttribute('data-prod-linea') === lineaId) {
+    const c = numOrNull(inpCalidad.value);
+    if (c != null) o.calidad = c;
+  }
+  const inpDefecto = document.getElementById('prodObjDefectoMax');
+  if (inpDefecto && inpDefecto.getAttribute('data-prod-linea') === lineaId) {
+    const d = numOrNull(inpDefecto.value);
+    if (d != null) o.defectoMax = d;
+  }
+
   const s = sesion();
   const usr = usuarioActual();
   if (usr && (usr.rol === 'produccion' || usr.rol === 'operario') && (usr.nombre || usr.usuario)) {
     s.operarioProduccion = usr.nombre || usr.usuario;
   }
-  const o = objDe(lineaId);
   o.accionesProdEnviadas = true;
   // Volcar las acciones al mapa de calor de defectos (s.defectos) antes de refrescar.
   if (typeof window.sincronizarDefectosCalidad === 'function') window.sincronizarDefectosCalidad();
@@ -290,6 +380,47 @@ export function enviarProduccion(lineaId) {
   if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
   emitirSincronizacionBloque('enviarProduccion');
   mostrarAlertaKira('Datos de producción enviados. Se reflejan en Vista de Planta.', 'Producción', 'exito');
+}
+
+/** Fija los objetivos para este turno y los almacena como predeterminados para todos los turnos futuros. */
+export function establecerObjetivosProd(lineaId) {
+  const o = objDe(lineaId);
+
+  const inpVacio = document.getElementById('prodObjVacioMax');
+  if (inpVacio) {
+    const v = numOrNull(inpVacio.value);
+    if (v != null) o.vacioMax = v;
+  }
+  const inpParadas = document.getElementById('prodObjParadasMax');
+  if (inpParadas) {
+    const p = numOrNull(inpParadas.value);
+    if (p != null) o.paradasMax = p;
+  }
+  const inpCalidad = document.getElementById('prodObjCalidadMin');
+  if (inpCalidad) {
+    const c = numOrNull(inpCalidad.value);
+    if (c != null) o.calidad = c;
+  }
+  const inpDefecto = document.getElementById('prodObjDefectoMax');
+  if (inpDefecto) {
+    const d = numOrNull(inpDefecto.value);
+    if (d != null) o.defectoMax = d;
+  }
+
+  guardarObjetivosPredeterminados(lineaId, {
+    vacioMax: o.vacioMax,
+    paradasMax: o.paradasMax,
+    calidad: o.calidad,
+    defectoMax: o.defectoMax
+  });
+
+  o.objetivosEstablecidos = true;
+  persistir();
+  renderProduccionInline();
+  if (typeof window.renderTodo === 'function') window.renderTodo();
+  if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
+  emitirSincronizacionBloque('establecerObjetivos');
+  mostrarAlertaKira('Objetivos guardados para este turno y fijados para todos los turnos futuros.', 'Objetivos de Planta', 'exito');
 }
 
 // ----------------------------------------------------------
@@ -472,3 +603,5 @@ window.quitarFotoProduccion = quitarFotoProduccion;
 window.onCambioQuemado = onCambioQuemado;
 window.onCambioAccionProd = onCambioAccionProd;
 window.enviarProduccion = enviarProduccion;
+window.establecerObjetivosProd = establecerObjetivosProd;
+window.renderObsProduccionPie = renderObsProduccionPie;

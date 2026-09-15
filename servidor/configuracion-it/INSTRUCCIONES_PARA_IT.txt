@@ -1,0 +1,87 @@
+================================================================================
+GUÍA DE INSTALACIÓN Y CONFIGURACIÓN DE KIRA PARA EL EQUIPO DE IT / SISTEMAS
+================================================================================
+
+Bienvenido/a. Este documento detalla cómo desplegar y configurar KIRA en los 
+servidores de la empresa para conectarlo a Microsoft SQL Server y habilitar el
+acceso a los operadores y supervisores en la red de planta.
+
+--------------------------------------------------------------------------------
+1. REQUISITOS DEL SISTEMA
+--------------------------------------------------------------------------------
+- Servidor: Windows Server 2016/2019/2022 o Linux con conectividad a la red de planta.
+- Entorno de Ejecución: Node.js (versión 18 LTS o superior recomendada).
+- Base de Datos: Microsoft SQL Server 2016, 2019, 2022 o Azure SQL.
+- Red: Puerto 3000 TCP habilitado (o puerto 80/443 si se usa proxy inverso IIS / Nginx).
+
+--------------------------------------------------------------------------------
+2. PASO A PASO PARA LA BASE DE DATOS (SQL SERVER)
+--------------------------------------------------------------------------------
+1. Abrir SQL Server Management Studio (SSMS) conectado a la instancia corporativa.
+2. Abrir y ejecutar el script adjunto en esta misma carpeta:
+   -> "crear-tablas-kira.sql"
+   (Este script crea la base de datos KIRA_PLANTA con todas las tablas e índices necesarios).
+3. Asegurarse de que el usuario asignado a la aplicación (ej: 'sa' o un usuario dedicado
+   como 'usr_kira') tenga permisos de LECTURA y ESCRITURA (db_datareader, db_datawriter)
+   en la base de datos KIRA_PLANTA.
+
+--------------------------------------------------------------------------------
+3. CONFIGURACIÓN DE CONEXIÓN DE KIRA
+--------------------------------------------------------------------------------
+Existen dos formas sencillas de indicarle a KIRA cómo conectarse a SQL Server:
+
+OPCIÓN A (Recomendada - Archivo .env):
+En la raíz del proyecto, crear o editar el archivo ".env" (pueden guiarse con ".env.example"):
+   SQL_SERVIDOR=nombre_o_ip_del_servidor_sql
+   SQL_PUERTO=1433
+   SQL_BASE_DATOS=KIRA_PLANTA
+   SQL_USUARIO=usr_kira
+   SQL_PASSWORD=contraseña_segura
+   SQL_ENCRIPTADO=false
+   SQL_CONFIAR_CERTIFICADO=true
+
+OPCIÓN B (Archivo JSON directo en esta carpeta):
+Editar el archivo "conexion-sqlserver.json" en esta carpeta con los mismos datos.
+
+--------------------------------------------------------------------------------
+4. ARRANQUE DEL SERVICIO EN EL SERVIDOR
+--------------------------------------------------------------------------------
+Para instalar dependencias y arrancar la aplicación:
+   1. Abrir terminal en la carpeta raíz de KIRA.
+   2. Ejecutar: npm install
+   3. Para iniciar en modo producción: npm start
+   
+* RECOMENDACIÓN PARA WINDOWS SERVER:
+  Para que KIRA corra como un servicio de Windows automático (que inicie solo al 
+  reiniciar el servidor sin necesidad de iniciar sesión de usuario), se sugiere 
+  usar PM2 o NSSM:
+     npm install pm2 -g
+     pm2 start server.js --name "KIRA-Planta"
+     pm2 save
+     pm2 startup
+
+--------------------------------------------------------------------------------
+5. ACCESO PARA USUARIOS DE PLANTA (ACCESO DIRECTO COMPARTIDO)
+--------------------------------------------------------------------------------
+Para que los operarios y supervisores ingresen sin instalar nada en sus equipos:
+1. Crear un acceso directo de Internet en una carpeta compartida de red accesible 
+   por todos (ej: \\ServidorArchivos\KIRA\Iniciar KIRA.url).
+2. El destino del acceso directo debe ser:
+   http://NOMBRE-DEL-SERVIDOR:3000
+   (o la IP fija del servidor en la red de planta: http://192.168.x.x:3000)
+3. Al hacer doble clic, se abrirá el navegador predeterminado (Edge / Chrome)
+   mostrando la pantalla de inicio de sesión de KIRA.
+
+--------------------------------------------------------------------------------
+6. SEGURIDAD Y ENCRIPTACIÓN
+--------------------------------------------------------------------------------
+- KIRA no guarda contraseñas en texto plano.
+- Todas las contraseñas se almacenan con hash criptográfico y sal aleatoria.
+- La comunicación entre el cliente y el servidor se valida mediante tokens de sesión.
+- Si se requiere HTTPS/SSL, KIRA puede colocarse fácilmente detrás de un sitio en IIS
+  con URL Rewrite / Reverse Proxy o Nginx.
+
+--------------------------------------------------------------------------------
+Cualquier duda o ajuste técnico, consultar con el equipo de desarrollo de KIRA.
+================================================================================
+

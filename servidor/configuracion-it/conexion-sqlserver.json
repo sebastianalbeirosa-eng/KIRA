@@ -1,0 +1,14 @@
+{
+  "_comentario": "Completar este archivo con los datos de SQL Server de la empresa si no se usa el archivo .env",
+  "servidor": "localhost",
+  "puerto": 1433,
+  "baseDeDatos": "KIRA_PLANTA",
+  "usuario": "sa",
+  "password": "TuPasswordSeguro123!",
+  "opciones": {
+    "encriptado": false,
+    "confiarEnCertificado": true,
+    "tiempoEsperaConexionMs": 15000
+  }
+}
+

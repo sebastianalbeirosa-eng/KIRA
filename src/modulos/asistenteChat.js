@@ -105,6 +105,7 @@ export function alternarAsistente() {
   if (!panel) return;
   const seVaAAbrir = panel.classList.contains('hidden');
   panel.classList.toggle('hidden');
+  window.__asistenteAbiertoManualmente = !panel.classList.contains('hidden');
   if (seVaAAbrir && !preguntasYaRenderizadas) {
     renderPreguntasAsistente();
     preguntasYaRenderizadas = true;

@@ -474,6 +474,46 @@ export async function cargarCatalogoDefectosDesdeJson() {
   }
 }
 
+const PREDETERMINADOS_KEY = 'kira_objetivos_predeterminados';
+
+/** Obtiene los objetivos predeterminados de planta para una línea. */
+export function obtenerObjetivosPredeterminados(lineaId) {
+  try {
+    if (db.objetivosPredeterminados && db.objetivosPredeterminados[lineaId]) {
+      return db.objetivosPredeterminados[lineaId];
+    }
+    const guardados = JSON.parse(localStorage.getItem(PREDETERMINADOS_KEY) || '{}');
+    if (guardados[lineaId]) {
+      if (!db.objetivosPredeterminados) db.objetivosPredeterminados = {};
+      db.objetivosPredeterminados[lineaId] = guardados[lineaId];
+      return guardados[lineaId];
+    }
+  } catch (e) {
+    console.warn('Error leyendo objetivos predeterminados:', e);
+  }
+  return null;
+}
+
+/** Guarda los objetivos predeterminados fijados por producción para que apliquen a todos los turnos futuros. */
+export function guardarObjetivosPredeterminados(lineaId, objs) {
+  try {
+    if (!db.objetivosPredeterminados) db.objetivosPredeterminados = {};
+    const limpio = {
+      vacioMax: objs.vacioMax != null && !isNaN(objs.vacioMax) ? Number(objs.vacioMax) : 30,
+      paradasMax: objs.paradasMax != null && !isNaN(objs.paradasMax) ? Number(objs.paradasMax) : 60,
+      calidad: objs.calidad != null && !isNaN(objs.calidad) ? Number(objs.calidad) : 90,
+      defectoMax: objs.defectoMax != null && !isNaN(objs.defectoMax) ? Number(objs.defectoMax) : 1.0
+    };
+    db.objetivosPredeterminados[lineaId] = limpio;
+    let guardados = {};
+    try { guardados = JSON.parse(localStorage.getItem(PREDETERMINADOS_KEY) || '{}'); } catch {}
+    guardados[lineaId] = limpio;
+    localStorage.setItem(PREDETERMINADOS_KEY, JSON.stringify(guardados));
+  } catch (e) {
+    console.warn('Error guardando objetivos predeterminados:', e);
+  }
+}
+
 /** Garantiza que la sesión tenga la estructura de objetivos por línea, migrando datos viejos si hace falta. */
 export function asegurarObjetivosSesion(s) {
   if (!s.objetivos) s.objetivos = {};
@@ -489,16 +529,24 @@ export function asegurarObjetivosSesion(s) {
   }
 
   lineasActivas().forEach(l => {
+    const defaults = obtenerObjetivosPredeterminados(l.id);
+    const defVacio = defaults?.vacioMax ?? 30;
+    const defParadas = defaults?.paradasMax ?? 60;
+    const defCalidad = defaults?.calidad ?? 90;
+    const defDefecto = defaults?.defectoMax ?? 1.0;
+
     if (!s.objetivos.porLinea[l.id]) {
       s.objetivos.porLinea[l.id] = {
         // --- OBJETIVOS DE PRODUCCIÓN (cargables en el mini-form) ---
-        vacioMax: 30,     // objetivo: minutos máx. de vacío de horno
-        paradasMax: 60,   // objetivo: minutos máx. de paradas de máquina
+        vacioMax: defVacio,       // objetivo: minutos máx. de vacío de horno
+        paradasMax: defParadas,   // objetivo: minutos máx. de paradas de máquina
+        calidad: defCalidad,      // objetivo: % mínimo de calidad global
+        defectoMax: defDefecto,   // objetivo: % máximo de defecto individual
+        realCalidad: 0,
         // Tomas de m² quemados (POR TURNO): hora + valor. Solo para mostrar
         // (hora a hora); ya no alimentan cálculos de rendimiento/proyección.
         lecturasQuemado: Array(3).fill(null).map(() => ({ hora: '', real: 0 })),
         // --- CALIDAD (planilla del auditor de calidad) ---
-        calidad: 90, realCalidad: 0,
         operarioCalidad: s.operarioCalidad || '',
         observacionesCalidad: '', // texto libre: observaciones generales del turno
         tomasCalidad: Array(8).fill(null).map(() => crearTomaCalidad()),
@@ -508,9 +556,10 @@ export function asegurarObjetivosSesion(s) {
     } else {
       const o = s.objetivos.porLinea[l.id];
       // Objetivos de producción.
-      if (typeof o.vacioMax !== 'number') o.vacioMax = 30;
-      if (typeof o.paradasMax !== 'number') o.paradasMax = 60;
-      if (typeof o.calidad !== 'number') o.calidad = 90;
+      if (typeof o.vacioMax !== 'number') o.vacioMax = defVacio;
+      if (typeof o.paradasMax !== 'number') o.paradasMax = defParadas;
+      if (typeof o.calidad !== 'number') o.calidad = defCalidad;
+      if (typeof o.defectoMax !== 'number') o.defectoMax = defDefecto;
 
       if (!Array.isArray(o.lecturasCalidad)) {
         o.lecturasCalidad = Array(8).fill(null).map(() => ({ hora: '', global: null, parcial: null }));

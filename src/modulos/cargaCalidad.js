@@ -267,7 +267,7 @@ function htmlTomaCalidad(lineaId, toma, i) {
         </div>
 
         <div class="text-right mt-3">
-          <button type="button" class="btn ${enviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-700 hover:bg-sky-800'} text-white text-xs px-4 py-1.5"
+          <button type="button" class="btn ${enviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-xs font-bold px-4 py-1.5 transition-colors shadow-xs"
             onclick="enviarTomaCalidad('${lineaId}', ${i})">${enviada ? '✓ Enviada · actualizar' : 'Enviar datos'}</button>
         </div>
       </div>
@@ -312,12 +312,14 @@ export function renderPlanillaCalidadInline() {
         <h2 class="font-black text-sky-700 uppercase text-sm">Carga de calidad · ${esc(nombreLinea(lineaId))}</h2>
         <p class="text-[11px] text-slate-500">Cada toma agrupa todo lo cargado en una hora. Se guarda solo; "Enviar datos" lo refleja en Vista de Planta. Cambiá de línea desde "Área monitoreada".</p>
       </div>
-      <div class="flex items-center gap-2 bg-sky-600 text-white rounded-lg px-4 py-2 shadow">
-        <span class="text-xs font-black uppercase leading-tight">Objetivo<br>de calidad</span>
-        <input type="number" step="0.01" value="${o.calidad != null ? o.calidad : ''}" placeholder="%"
-          class="w-24 text-2xl font-black text-slate-800 rounded px-2 py-1 text-center"
-          onchange="onCambioCalidad(this)" data-cal-linea="${lineaId}" data-cal-meta="calidad">
-        <span class="text-xl font-black">%</span>
+      <div class="flex items-center gap-2.5 bg-slate-200/80 border border-slate-300 rounded-lg px-3.5 py-1.5 shadow-2xs" title="Objetivo fijado por Operario de Producción">
+        <div class="text-right">
+          <div class="text-[10px] font-black uppercase tracking-wider text-slate-600">Objetivo Calidad</div>
+          <div class="text-[9px] text-sky-700 font-bold">Fijado por Producción</div>
+        </div>
+        <div class="bg-white border border-slate-300 rounded px-2.5 py-0.5 text-xl font-black text-slate-800 shadow-inner">
+          ${o.calidad != null ? o.calidad : 90}%
+        </div>
       </div>
     </div>
 
@@ -334,8 +336,8 @@ export function renderPlanillaCalidadInline() {
     <div class="mt-4 border-2 border-slate-200 rounded-lg p-3 bg-slate-50/60">
       <div class="flex items-center justify-between mb-2">
         <div class="text-xs font-black text-slate-600 uppercase">Observaciones del turno (Calidad)</div>
-        <button type="button" class="btn bg-slate-600 text-white hover:bg-slate-700 text-[11px] px-3 py-1"
-          onclick="enviarObsCalidad('${lineaId}')">Enviar nota</button>
+        <button type="button" class="btn ${o.notaCalidadEnviada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} text-white text-[11px] font-bold px-3 py-1 transition-colors"
+          onclick="enviarObsCalidad('${lineaId}')">${o.notaCalidadEnviada ? '✓ Nota enviada' : 'Enviar nota'}</button>
       </div>
       <textarea id="obsCalidadTxt" rows="3" placeholder="Notas generales del turno: incidencias, tendencias, avisos para el próximo turno…"
         class="field w-full text-sm p-2" onchange="onCambioObservacionesCalidad(this)"
@@ -499,13 +501,18 @@ export function onCambioObservacionesCalidad(el) {
   if (!lineaId) return;
   const o = objDe(lineaId);
   o.observacionesCalidad = el.value;
+  o.notaCalidadEnviada = false;
   persistir();
 }
 
 /** Envía la nota de calidad: guarda lo tipeado y refresca Vista de Planta. */
 export function enviarObsCalidad(lineaId) {
+  const o = objDe(lineaId);
   const el = document.getElementById('obsCalidadTxt');
-  if (el) { objDe(lineaId).observacionesCalidad = el.value; persistir(); }
+  if (el) { o.observacionesCalidad = el.value; }
+  o.notaCalidadEnviada = true;
+  persistir();
+  renderPlanillaCalidadInline();
   if (typeof window.renderVistaPlanta === 'function') window.renderVistaPlanta();
   emitirSincronizacionBloque('enviarObsCalidad');
   mostrarAlertaKira('Nota de calidad enviada. Aparece en Vista de Planta.', 'Calidad', 'exito');
@@ -691,6 +698,11 @@ export function quitarAccionCalidad(lineaId, i, fila) {
 
 /** Marca la toma como enviada (se refleja en Vista de Planta) y avisa. */
 export function enviarTomaCalidad(lineaId, i) {
+  // 1. Guardar cualquier cambio en la cabecera operativa (supervisor, operario de calidad, etc.)
+  if (typeof window.guardarMeta === 'function') {
+    window.guardarMeta();
+  }
+
   volcarDomToma(lineaId, i);
   const toma = tomaDe(lineaId, i);
   if (!toma) return;
